@@ -1,10 +1,11 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { User as UserIcon, Settings, Bell, HelpCircle, Store, Bike, ChevronRight, LogOut } from 'lucide-react-native';
+import { User as UserIcon, Settings, Bell, HelpCircle, Store, Bike, ChevronRight, LogOut, Edit, LogIn } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { useApp } from '@/providers/AppProvider';
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 
 type MenuOption = {
   icon: typeof UserIcon;
@@ -15,8 +16,23 @@ type MenuOption = {
 };
 
 export default function ProfileScreen() {
-  const { setRole, currentRole, resetApp } = useApp();
+  const { setRole, currentRole, resetApp, user, businessProfile } = useApp();
   const router = useRouter();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!user) {
+      console.log('[Profile] User not authenticated, showing login prompt');
+    }
+  }, [user]);
+
+  const handleLogin = () => {
+    router.push('/login' as any);
+  };
+
+  const handleRegister = () => {
+    router.push('/register-customer' as any);
+  };
 
   const handleLogout = useCallback(async () => {
     console.log('[Profile] Logging out');
@@ -27,16 +43,27 @@ export default function ProfileScreen() {
   const handleSwitchToDriver = () => {
     console.log('[Profile] Switching to driver role');
     setRole('driver');
+    router.replace('/(tabs)/driver');
   };
 
   const handleSwitchToBusiness = () => {
     console.log('[Profile] Switching to business role');
     setRole('business');
+    router.replace('/(tabs)/business');
   };
 
   const handleBackToClient = () => {
     console.log('[Profile] Switching back to client role');
     setRole('client');
+    router.replace('/(tabs)/home');
+  };
+
+  const handleEditBusiness = () => {
+    router.push('/(tabs)/business/edit-business' as any);
+  };
+
+  const handleSettings = () => {
+    router.push('/settings' as any);
   };
 
   const getRoleLabel = () => {
@@ -52,8 +79,74 @@ export default function ProfileScreen() {
     }
   };
 
+  const getUserName = () => {
+    if (currentRole === 'business' && businessProfile?.businessName) {
+      return businessProfile.businessName;
+    }
+    return user?.email?.split('@')[0] || 'Usuario';
+  };
+
+  // Show login prompt if user is not authenticated
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <Stack.Screen options={{ title: 'Perfil', headerShown: true }} />
+
+        <View style={styles.unauthContainer}>
+          <View style={styles.unauthIconContainer}>
+            <UserIcon size={64} color={COLORS.gray[400]} />
+          </View>
+
+          <Text style={styles.unauthTitle}>Inicia Sesión</Text>
+          <Text style={styles.unauthSubtitle}>
+            Accede a tu cuenta para ver tu perfil, historial de pedidos y más
+          </Text>
+
+          <View style={styles.unauthButtons}>
+            <Button onPress={handleLogin}>
+              Iniciar Sesión
+            </Button>
+
+            <TouchableOpacity
+              style={styles.registerButton}
+              onPress={handleRegister}
+            >
+              <Text style={styles.registerButtonText}>
+                ¿No tienes cuenta? Regístrate
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.guestInfo}>
+            <Text style={styles.guestInfoText}>
+              Puedes explorar negocios y productos sin iniciar sesión
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   const getRoleSpecificOptions = (): MenuOption[] => {
-    if (currentRole === 'driver' || currentRole === 'business') {
+    if (currentRole === 'business') {
+      return [
+        {
+          icon: Edit,
+          label: 'Editar Negocio',
+          onPress: handleEditBusiness,
+          color: COLORS.primary,
+          showChevron: true,
+        },
+        {
+          icon: UserIcon,
+          label: 'Volver a modo cliente',
+          onPress: handleBackToClient,
+          showChevron: true,
+        },
+      ];
+    }
+
+    if (currentRole === 'driver') {
       return [
         {
           icon: UserIcon,
@@ -86,7 +179,7 @@ export default function ProfileScreen() {
     {
       icon: Settings,
       label: 'Configuración',
-      onPress: () => console.log('Settings'),
+      onPress: handleSettings,
       showChevron: true,
     },
     {
@@ -114,7 +207,8 @@ export default function ProfileScreen() {
               <UserIcon size={40} color={COLORS.white} />
             </View>
           </View>
-          <Text style={styles.name}>Usuario Demo</Text>
+          <Text style={styles.name}>{getUserName()}</Text>
+          {user?.email && <Text style={styles.email}>{user.email}</Text>}
           <Text style={styles.role}>{getRoleLabel()}</Text>
         </Card>
 
@@ -232,6 +326,11 @@ const styles = StyleSheet.create({
     color: COLORS.gray[900],
     marginBottom: SPACING.xs,
   },
+  email: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.gray[600],
+    marginBottom: SPACING.xs,
+  },
   role: {
     fontSize: TYPOGRAPHY.fontSize.md,
     color: COLORS.gray[600],
@@ -245,7 +344,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontWeight: TYPOGRAPHY.fontWeight.semiBold,
     color: COLORS.gray[900],
     marginBottom: SPACING.sm,
     paddingHorizontal: SPACING.xs,
@@ -285,5 +384,58 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     color: COLORS.gray[400],
     marginTop: SPACING.xl,
+  },
+  unauthContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.xl,
+    gap: SPACING.lg,
+  },
+  unauthIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.gray[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
+  },
+  unauthTitle: {
+    fontSize: TYPOGRAPHY.fontSize.xxl,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.gray[900],
+    textAlign: 'center',
+  },
+  unauthSubtitle: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    color: COLORS.gray[600],
+    textAlign: 'center',
+    lineHeight: 22,
+    maxWidth: 300,
+  },
+  unauthButtons: {
+    width: '100%',
+    gap: SPACING.md,
+    marginTop: SPACING.lg,
+  },
+  registerButton: {
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+  },
+  registerButtonText: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    color: COLORS.primary,
+    fontWeight: TYPOGRAPHY.fontWeight.semiBold,
+  },
+  guestInfo: {
+    marginTop: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
+  },
+  guestInfoText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.gray[500],
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

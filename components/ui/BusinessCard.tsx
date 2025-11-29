@@ -16,21 +16,21 @@ export function BusinessCard({ business, onPress, testID }: BusinessCardProps) {
     <Card onPress={() => onPress(business)} style={styles.card} testID={testID}>
       <View style={styles.imageContainer}>
         <Image source={{ uri: business.image }} style={styles.image} />
-        
+
         {business.discount && (
           <View style={styles.discountBadge}>
             <Tag size={14} color={COLORS.white} />
             <Text style={styles.discountText}>{business.discount}% OFF</Text>
           </View>
         )}
-        
+
         {business.featured && (
           <View style={styles.featuredBadge}>
             <TrendingUp size={12} color={COLORS.white} />
             <Text style={styles.featuredText}>DESTACADO</Text>
           </View>
         )}
-        
+
         {!business.isOpen && (
           <View style={styles.closedOverlay}>
             <View style={styles.closedBadge}>
@@ -39,18 +39,18 @@ export function BusinessCard({ business, onPress, testID }: BusinessCardProps) {
           </View>
         )}
       </View>
-      
+
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.name} numberOfLines={1}>
             {business.name}
           </Text>
         </View>
-        
+
         <Text style={styles.description} numberOfLines={2}>
           {business.description}
         </Text>
-        
+
         {business.tags && business.tags.length > 0 && (
           <View style={styles.tagsContainer}>
             {business.tags.map((tag, index) => (
@@ -60,30 +60,30 @@ export function BusinessCard({ business, onPress, testID }: BusinessCardProps) {
             ))}
           </View>
         )}
-        
+
         <View style={styles.footer}>
           <View style={styles.infoRow}>
             <View style={styles.rating}>
               <Star size={14} color={COLORS.accent} fill={COLORS.accent} />
               <Text style={styles.ratingText}>
-                {business.rating}
+                {business.rating || 0}
               </Text>
               <Text style={styles.reviewsText}>({business.reviews})</Text>
             </View>
-            
+
             <View style={styles.deliveryTimeContainer}>
               <Clock size={14} color={COLORS.gray[500]} />
               <Text style={styles.deliveryTime}>{business.deliveryTime}</Text>
             </View>
           </View>
-          
+
           <View style={styles.deliveryFeeContainer}>
             <Truck size={14} color={business.freeDelivery ? COLORS.success : COLORS.gray[500]} />
             <Text style={[
               styles.deliveryFee,
               business.freeDelivery && styles.freeDelivery
             ]}>
-              {business.freeDelivery ? 'Envío Gratis' : `${business.deliveryFee.toFixed(2)}`}
+              {business.freeDelivery ? 'Envío Gratis' : `$${(business.deliveryFee || 0).toFixed(2)}`}
             </Text>
           </View>
         </View>

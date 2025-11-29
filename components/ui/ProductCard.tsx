@@ -23,21 +23,27 @@ export function ProductCard({
   return (
     <Card style={styles.card} testID={testID}>
       <View style={styles.imageContainer}>
-        <Image source={{ uri: product.image }} style={styles.image} />
-        
-        {product.discount && (
+        {product.image ? (
+          <Image source={{ uri: product.image }} style={styles.image} />
+        ) : (
+          <View style={[styles.image, styles.placeholderContainer]}>
+            <Sparkles size={24} color={COLORS.gray[400]} />
+          </View>
+        )}
+
+        {!!product.discount && product.discount > 0 && (
           <View style={styles.discountBadge}>
             <Text style={styles.discountText}>-{product.discount}%</Text>
           </View>
         )}
-        
+
         {product.isNew && (
           <View style={styles.newBadge}>
             <Sparkles size={10} color={COLORS.white} />
             <Text style={styles.newText}>NUEVO</Text>
           </View>
         )}
-        
+
         {product.isBestSeller && (
           <View style={styles.bestSellerBadge}>
             <TrendingUp size={10} color={COLORS.white} />
@@ -45,7 +51,7 @@ export function ProductCard({
           </View>
         )}
       </View>
-      
+
       <View style={styles.content}>
         <Text style={styles.name} numberOfLines={1}>
           {product.name}
@@ -53,7 +59,7 @@ export function ProductCard({
         <Text style={styles.description} numberOfLines={2}>
           {product.description}
         </Text>
-        
+
         <View style={styles.footer}>
           <View style={styles.priceContainer}>
             {product.originalPrice && (
@@ -63,7 +69,7 @@ export function ProductCard({
             )}
             <Text style={styles.price}>${product.price.toFixed(2)}</Text>
           </View>
-          
+
           {product.available ? (
             <View style={styles.quantityContainer}>
               {quantity > 0 ? (
@@ -110,6 +116,10 @@ const styles = StyleSheet.create({
     height: '100%' as const,
     borderRadius: BORDER_RADIUS.md,
     backgroundColor: COLORS.gray[200],
+  },
+  placeholderContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   discountBadge: {
     position: 'absolute' as const,

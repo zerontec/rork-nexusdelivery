@@ -92,8 +92,9 @@ function OrderCard({ order, onPress }: { order: Order; onPress: (order: Order) =
 
 export default function OrdersScreen() {
   const router = useRouter();
-  const { resetApp } = useApp();
+  const { resetApp, currentRole, user } = useApp();
   const { orders } = useOrders();
+  const [activeTab, setActiveTab] = React.useState<'available' | 'my_deliveries'>('available');
 
   const handleOrderPress = (order: Order) => {
     console.log('[Orders] Order pressed:', order.id);
@@ -106,11 +107,21 @@ export default function OrdersScreen() {
     router.replace('/');
   };
 
+  const filteredOrders = React.useMemo(() => {
+    if (currentRole !== 'driver') return orders;
+
+    if (activeTab === 'available') {
+      return orders.filter(o => o.status === 'ready' && !o.driverId);
+    } else {
+      return orders.filter(o => o.driverId === user?.id);
+    }
+  }, [orders, currentRole, activeTab, user?.id]);
+
   return (
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          title: 'Mis Pedidos',
+          title: currentRole === 'driver' ? 'Panel de Repartidor' : 'Mis Pedidos',
           headerShown: true,
           headerRight: () => (
             <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
@@ -120,21 +131,50 @@ export default function OrdersScreen() {
         }}
       />
 
+      {currentRole === 'driver' && (
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'available' && styles.activeTab]}
+            onPress={() => setActiveTab('available')}
+          >
+            <Text style={[styles.tabText, activeTab === 'available' && styles.activeTabText]}>
+              Disponibles
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'my_deliveries' && styles.activeTab]}
+            onPress={() => setActiveTab('my_deliveries')}
+          >
+            <Text style={[styles.tabText, activeTab === 'my_deliveries' && styles.activeTabText]}>
+              Mis Entregas
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <ScrollView contentContainerStyle={styles.content}>
-        {orders.length === 0 ? (
+        {filteredOrders.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Package size={64} color={COLORS.gray[300]} />
-            <Text style={styles.emptyTitle}>No tienes pedidos</Text>
-            <Text style={styles.emptyText}>
-              Cuando realices un pedido, aparecerá aquí
+            <Text style={styles.emptyTitle}>
+              {currentRole === 'driver'
+                ? (activeTab === 'available' ? 'No hay pedidos disponibles' : 'No tienes entregas activas')
+                : 'No tienes pedidos'}
             </Text>
-            <Button onPress={() => router.push('/home' as any)} style={styles.emptyButton}>
-              Explorar negocios
-            </Button>
+            <Text style={styles.emptyText}>
+              {currentRole === 'driver'
+                ? (activeTab === 'available' ? 'Espera a que los negocios preparen pedidos' : 'Acepta un pedido para empezar')
+                : 'Cuando realices un pedido, aparecerá aquí'}
+            </Text>
+            {currentRole !== 'driver' && (
+              <Button onPress={() => router.push('/home' as any)} style={styles.emptyButton}>
+                Explorar negocios
+              </Button>
+            )}
           </View>
         ) : (
           <View style={styles.ordersList}>
-            {orders.map((order) => (
+            {filteredOrders.map((order) => (
               <OrderCard key={order.id} order={order} onPress={handleOrderPress} />
             ))}
           </View>
@@ -254,5 +294,30 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     fontWeight: TYPOGRAPHY.fontWeight.medium,
     color: COLORS.primary,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    padding: SPACING.md,
+    backgroundColor: COLORS.white,
+    gap: SPACING.md,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: COLORS.primary,
+  },
+  tabText: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    color: COLORS.gray[500],
+  },
+  activeTabText: {
+    color: COLORS.primary,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
   },
 });

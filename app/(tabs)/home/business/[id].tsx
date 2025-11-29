@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,16 @@ import {
   Image,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Clock, DollarSign, Star, MapPin } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS } from '@/constants/theme';
-import { MOCK_BUSINESSES } from '@/mocks/businesses';
-import { MOCK_PRODUCTS } from '@/mocks/products';
 import { ProductCard } from '@/components/ui/ProductCard';
 import { Button } from '@/components/ui/Button';
 import { useCart } from '@/providers/CartProvider';
-import { Product } from '@/types';
+import { Product, Business } from '@/types';
+import { supabase } from '@/lib/supabase';
 
 export default function BusinessDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -23,12 +23,63 @@ export default function BusinessDetailScreen() {
   const { items, addItem, removeItem, itemCount, subtotal } = useCart();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  const business = useMemo(() => {
-    return MOCK_BUSINESSES.find((b) => b.id === id);
-  }, [id]);
+  const [business, setBusiness] = useState<Business | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const products = useMemo(() => {
-    return MOCK_PRODUCTS.filter((p) => p.businessId === id);
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!id) return;
+
+      try {
+        setLoading(true);
+
+        // Fetch business
+        const { data: businessData, error: businessError } = await supabase
+          .from('businesses')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (businessError) throw businessError;
+
+        // Transform DB data to Business type if needed (handling camelCase/snake_case)
+        // Assuming the types match or we map them. 
+        // The DB has snake_case (delivery_time, delivery_fee), app uses camelCase.
+        const mappedBusiness: Business = {
+          ...businessData,
+          deliveryTime: businessData.delivery_time,
+          deliveryFee: businessData.delivery_fee,
+          minimumOrder: businessData.minimum_order,
+          isOpen: businessData.is_open,
+          // location might need parsing if it's a string, but it's defined as jsonb in schema so it should be object
+        };
+        setBusiness(mappedBusiness);
+
+        // Fetch products
+        const { data: productsData, error: productsError } = await supabase
+          .from('products')
+          .select('*')
+          .eq('business_id', id);
+
+        if (productsError) throw productsError;
+
+        // Map products similarly
+        const mappedProducts: Product[] = (productsData || []).map(p => ({
+          ...p,
+          businessId: p.business_id,
+        }));
+        console.log('[BusinessDetail] Fetched products:', JSON.stringify(mappedProducts, null, 2));
+        setProducts(mappedProducts);
+
+      } catch (error) {
+        console.error('Error fetching business details:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
   }, [id]);
 
   const categories = useMemo(() => {
@@ -60,6 +111,14 @@ export default function BusinessDetailScreen() {
       }
     }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
 
   if (!business) {
     return (
@@ -311,5 +370,9 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xl,
     fontWeight: TYPOGRAPHY.fontWeight.bold,
     color: COLORS.gray[900],
+  },
+  centerContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -1,7 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { CartItem, Product } from '@/types';
-import { MOCK_PRODUCTS } from '@/mocks/products';
+import { supabase } from '@/lib/supabase';
 
 type CartContextValue = {
   items: CartItem[];
@@ -16,6 +16,47 @@ type CartContextValue = {
 
 export const [CartProvider, useCart] = createContextHook((): CartContextValue => {
   const [items, setItems] = useState<CartItem[]>([]);
+  const [products, setProducts] = useState<Record<string, Product>>({});
+
+  // Fetch product details for items in cart
+  useEffect(() => {
+    const fetchMissingProducts = async () => {
+      const missingIds = items
+        .map(item => item.productId)
+        .filter(id => !products[id]);
+
+      if (missingIds.length === 0) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .in('id', missingIds);
+
+        if (error) throw error;
+
+        if (data) {
+          setProducts(prev => {
+            const next = { ...prev };
+            data.forEach((p: any) => {
+              next[p.id] = {
+                ...p,
+                businessId: p.business_id,
+                isBestSeller: p.is_best_seller,
+                isNew: p.is_new,
+                originalPrice: p.original_price,
+              };
+            });
+            return next;
+          });
+        }
+      } catch (error) {
+        console.error('[CartProvider] Error fetching products:', error);
+      }
+    };
+
+    fetchMissingProducts();
+  }, [items, products]);
 
   const addItem = useCallback((productId: string, quantity = 1, notes?: string) => {
     console.log('[CartProvider] Adding item:', productId, quantity);
@@ -58,8 +99,8 @@ export const [CartProvider, useCart] = createContextHook((): CartContextValue =>
   }, []);
 
   const getProduct = useCallback((productId: string): Product | undefined => {
-    return MOCK_PRODUCTS.find((p) => p.id === productId);
-  }, []);
+    return products[productId];
+  }, [products]);
 
   const itemCount = useMemo(() => {
     return items.reduce((sum, item) => sum + item.quantity, 0);
@@ -67,10 +108,10 @@ export const [CartProvider, useCart] = createContextHook((): CartContextValue =>
 
   const subtotal = useMemo(() => {
     return items.reduce((sum, item) => {
-      const product = getProduct(item.productId);
+      const product = products[item.productId];
       return sum + (product?.price || 0) * item.quantity;
     }, 0);
-  }, [items, getProduct]);
+  }, [items, products]);
 
   return useMemo(
     () => ({

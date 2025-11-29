@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import {
@@ -19,57 +20,88 @@ import {
 } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
-import { MOCK_ORDERS } from '@/mocks/orders';
-import { MOCK_PRODUCTS } from '@/mocks/products';
 import { useApp } from '@/providers/AppProvider';
+import { useOrders } from '@/providers/OrdersProvider';
+import { supabase } from '@/lib/supabase';
+import { Product } from '@/types';
 
 export default function SalesTodayScreen() {
   const router = useRouter();
   const { businessProfile } = useApp();
+  const { orders, isLoading: isLoadingOrders } = useOrders();
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
+  const [productsMap, setProductsMap] = useState<Record<string, Product>>({});
 
-  const businessId = businessProfile?.id || 'b1';
+  const businessId = businessProfile?.id;
 
-  const todayOrders = useMemo(() => {
+  // Fetch products to show details in top products
+  useEffect(() => {
+    const fetchProducts = async () => {
+      if (!businessId) return;
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .eq('business_id', businessId);
+
+        if (error) throw error;
+
+        if (data) {
+          const map: Record<string, Product> = {};
+          data.forEach((p: any) => {
+            map[p.id] = { ...p, businessId: p.business_id };
+          });
+          setProductsMap(map);
+        }
+      } catch (error) {
+        console.error('Error fetching products for sales stats:', error);
+      }
+    };
+
+    fetchProducts();
+  }, [businessId]);
+
+  const filteredOrders = useMemo(() => {
+    if (!businessId) return [];
+
     const today = new Date();
-    
-    let filteredOrders = MOCK_ORDERS.filter((o) => o.businessId === businessId);
+    let filtered = orders.filter((o) => o.businessId === businessId);
 
     if (selectedPeriod === 'today') {
-      filteredOrders = filteredOrders.filter((o) => {
+      filtered = filtered.filter((o) => {
         const orderDate = new Date(o.createdAt);
         return orderDate.toDateString() === today.toDateString();
       });
     } else if (selectedPeriod === 'week') {
       const weekAgo = new Date(today);
       weekAgo.setDate(today.getDate() - 7);
-      filteredOrders = filteredOrders.filter((o) => {
+      filtered = filtered.filter((o) => {
         const orderDate = new Date(o.createdAt);
         return orderDate >= weekAgo;
       });
     } else if (selectedPeriod === 'month') {
       const monthAgo = new Date(today);
       monthAgo.setMonth(today.getMonth() - 1);
-      filteredOrders = filteredOrders.filter((o) => {
+      filtered = filtered.filter((o) => {
         const orderDate = new Date(o.createdAt);
         return orderDate >= monthAgo;
       });
     }
 
-    return filteredOrders.sort(
+    return filtered.sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [businessId, selectedPeriod]);
+  }, [businessId, orders, selectedPeriod]);
 
   const stats = useMemo(() => {
-    const totalRevenue = todayOrders.reduce((sum, o) => sum + o.total, 0);
-    const totalOrders = todayOrders.length;
+    const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.total, 0);
+    const totalOrders = filteredOrders.length;
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-    
-    const completedOrders = todayOrders.filter(o => o.status === 'delivered').length;
+
+    const completedOrders = filteredOrders.filter(o => o.status === 'delivered').length;
     const completionRate = totalOrders > 0 ? (completedOrders / totalOrders) * 100 : 0;
 
-    const productsSold = todayOrders.reduce((sum, o) => {
+    const productsSold = filteredOrders.reduce((sum, o) => {
       return sum + o.items.reduce((itemSum, item) => itemSum + item.quantity, 0);
     }, 0);
 
@@ -80,12 +112,12 @@ export default function SalesTodayScreen() {
       productsSold,
       completionRate,
     };
-  }, [todayOrders]);
+  }, [filteredOrders]);
 
   const topProducts = useMemo(() => {
     const productQuantities: Record<string, { quantity: number; revenue: number }> = {};
 
-    todayOrders.forEach((order) => {
+    filteredOrders.forEach((order) => {
       order.items.forEach((item) => {
         if (!productQuantities[item.productId]) {
           productQuantities[item.productId] = { quantity: 0, revenue: 0 };
@@ -97,7 +129,7 @@ export default function SalesTodayScreen() {
 
     return Object.entries(productQuantities)
       .map(([productId, data]) => {
-        const product = MOCK_PRODUCTS.find((p) => p.id === productId);
+        const product = productsMap[productId];
         return {
           productId,
           product,
@@ -106,7 +138,7 @@ export default function SalesTodayScreen() {
       })
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
-  }, [todayOrders]);
+  }, [filteredOrders, productsMap]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -155,13 +187,13 @@ export default function SalesTodayScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen 
-        options={{ 
+      <Stack.Screen
+        options={{
           title: 'Detalles de Ventas',
           headerStyle: {
             backgroundColor: COLORS.white,
           },
-        }} 
+        }}
       />
 
       <ScrollView
@@ -256,75 +288,8 @@ export default function SalesTodayScreen() {
             ))}
           </View>
         )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pedidos ({todayOrders.length})</Text>
-          
-          {todayOrders.length === 0 ? (
-            <Card style={styles.emptyCard}>
-              <ShoppingBag size={48} color={COLORS.gray[400]} />
-              <Text style={styles.emptyTitle}>No hay pedidos</Text>
-              <Text style={styles.emptyText}>
-                No se encontraron pedidos para {getPeriodLabel().toLowerCase()}
-              </Text>
-            </Card>
-          ) : (
-            todayOrders.map((order) => (
-              <TouchableOpacity
-                key={order.id}
-                onPress={() => router.push(`/order-detail?id=${order.id}` as any)}
-              >
-                <Card style={styles.orderCard}>
-                  <View style={styles.orderHeader}>
-                    <View style={styles.orderHeaderLeft}>
-                      <Text style={styles.orderId}>#{order.id.slice(0, 8)}</Text>
-                      <View style={styles.orderTime}>
-                        <Clock size={14} color={COLORS.gray[500]} />
-                        <Text style={styles.orderTimeText}>
-                          {new Date(order.createdAt).toLocaleTimeString('es-ES', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        { backgroundColor: getStatusColor(order.status) + '20' },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          { color: getStatusColor(order.status) },
-                        ]}
-                      >
-                        {getStatusLabel(order.status)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.orderDetails}>
-                    <View style={styles.orderDetail}>
-                      <Package size={16} color={COLORS.gray[600]} />
-                      <Text style={styles.orderDetailText}>
-                        {order.items.length} productos ({order.items.reduce((sum, i) => sum + i.quantity, 0)} unidades)
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.orderFooter}>
-                    <Text style={styles.orderTotal}>${order.total.toFixed(2)}</Text>
-                    <ChevronRight size={20} color={COLORS.gray[400]} />
-                  </View>
-                </Card>
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
-      </ScrollView>
-    </View>
+      </ScrollView >
+    </View >
   );
 }
 

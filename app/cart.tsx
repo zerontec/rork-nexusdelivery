@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,13 +14,55 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useCart } from '@/providers/CartProvider';
 import { useApp } from '@/providers/AppProvider';
-import { MOCK_PRODUCTS } from '@/mocks/products';
-import { MOCK_BUSINESSES } from '@/mocks/businesses';
+import { supabase } from '@/lib/supabase';
+import { Business } from '@/types';
 
 export default function CartScreen() {
   const router = useRouter();
-  const { items, addItem, removeItem, clearCart, subtotal, itemCount } = useCart();
+  const { items, addItem, removeItem, clearCart, subtotal, itemCount, getProduct } = useCart();
   const { currentRole } = useApp();
+  const [business, setBusiness] = useState<Business | null>(null);
+
+  useEffect(() => {
+    const fetchBusiness = async () => {
+      if (items.length === 0) {
+        setBusiness(null);
+        return;
+      }
+
+      // Get business ID from the first product in cart
+      // We need to wait for product details to be available in CartProvider
+      // or fetch it here if we just have the ID.
+      // Since CartProvider fetches products, we can try to get it from there,
+      // but it might be async.
+      // Let's fetch the product's business ID directly here to be sure.
+
+      try {
+        const productId = items[0].productId;
+        const { data: productData } = await supabase
+          .from('products')
+          .select('business_id')
+          .eq('id', productId)
+          .single();
+
+        if (productData?.business_id) {
+          const { data: businessData } = await supabase
+            .from('businesses')
+            .select('*')
+            .eq('id', productData.business_id)
+            .single();
+
+          if (businessData) {
+            setBusiness(businessData as any);
+          }
+        }
+      } catch (error) {
+        console.error('[Cart] Error fetching business:', error);
+      }
+    };
+
+    fetchBusiness();
+  }, [items]);
 
   if (items.length === 0) {
     return (
@@ -44,10 +86,6 @@ export default function CartScreen() {
     );
   }
 
-  const businessId = MOCK_PRODUCTS.find(
-    (p) => p.id === items[0].productId
-  )?.businessId;
-  const business = MOCK_BUSINESSES.find((b) => b.id === businessId);
   const deliveryFee = business?.deliveryFee || 0;
   const total = subtotal + deliveryFee;
 
@@ -78,7 +116,7 @@ export default function CartScreen() {
 
         <View style={styles.itemsContainer}>
           {items.map((item) => {
-            const product = MOCK_PRODUCTS.find((p) => p.id === item.productId);
+            const product = getProduct(item.productId);
             if (!product) return null;
 
             return (

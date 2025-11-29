@@ -15,12 +15,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { User, Mail, Lock, Phone, MapPin, ArrowLeft, Eye, EyeOff, Check } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { useApp } from '@/providers/AppProvider';
+import { supabase } from '@/lib/supabase';
 
 export default function RegisterCustomerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { setRole } = useApp();
-  
+  // const { setRole } = useApp();
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -41,18 +42,43 @@ export default function RegisterCustomerScreen() {
 
     if (formData.password !== formData.confirmPassword) {
       console.log('[RegisterCustomer] Passwords do not match');
+      alert('Passwords do not match');
       return;
     }
 
     console.log('[RegisterCustomer] Registering customer:', formData.email);
     setLoading(true);
 
-    setTimeout(() => {
+    try {
+      // 1. Sign up with Supabase Auth and pass metadata
+      const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.name,
+            phone: formData.phone,
+            address: formData.address,
+            role: 'client', // Important: Pass role in metadata for the trigger
+          },
+        },
+      });
+
+      if (signUpError) throw signUpError;
+
+      if (user) {
+        // Profile is now created automatically by the database trigger 'on_auth_user_created'
+        // No need to manually insert into 'profiles'
+
+        console.log('[RegisterCustomer] Registration successful');
+        router.replace('/checkout' as any);
+      }
+    } catch (error: any) {
+      console.error('[RegisterCustomer] Error:', error.message);
+      alert(error.message);
+    } finally {
       setLoading(false);
-      console.log('[RegisterCustomer] Registration successful');
-      setRole('customer');
-      router.replace('/checkout' as any);
-    }, 1500);
+    }
   };
 
   return (
@@ -72,7 +98,7 @@ export default function RegisterCustomerScreen() {
           headerShadowVisible: false,
         }}
       />
-      
+
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

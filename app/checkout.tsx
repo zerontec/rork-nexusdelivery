@@ -15,39 +15,58 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useCart } from '@/providers/CartProvider';
 import { useApp } from '@/providers/AppProvider';
-import { MOCK_PRODUCTS } from '@/mocks/products';
-import { MOCK_BUSINESSES } from '@/mocks/businesses';
+import { supabase } from '@/lib/supabase';
 
 type PaymentMethod = 'card' | 'cash';
 
 export default function CheckoutScreen() {
   const router = useRouter();
-  const { items, subtotal, clearCart } = useCart();
-  const { currentRole } = useApp();
+  const { items, subtotal, clearCart, getProduct } = useCart();
+  const { currentRole, user } = useApp();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [deliveryAddress, setDeliveryAddress] = useState('Calle Principal 123, Centro');
   const [notes, setNotes] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [business, setBusiness] = useState<any>(null);
 
   useEffect(() => {
     if (items.length === 0) {
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home' as any);
+      return;
     }
-  }, [items.length, router]);
+
+    const fetchBusiness = async () => {
+      const firstProduct = getProduct(items[0].productId);
+      if (firstProduct?.businessId) {
+        const { data } = await supabase
+          .from('businesses')
+          .select('*')
+          .eq('id', firstProduct.businessId)
+          .single();
+
+        if (data) {
+          setBusiness({
+            ...data,
+            deliveryFee: data.delivery_fee,
+            deliveryTime: data.delivery_time,
+          });
+        }
+      }
+    };
+
+    fetchBusiness();
+  }, [items, getProduct, router]);
 
   if (items.length === 0) {
     return null;
   }
 
-  const businessId = MOCK_PRODUCTS.find(
-    (p) => p.id === items[0].productId
-  )?.businessId;
-  const business = MOCK_BUSINESSES.find((b) => b.id === businessId);
   const deliveryFee = business?.deliveryFee || 0;
   const total = subtotal + deliveryFee;
+  const businessId = business?.id;
 
   const handlePlaceOrder = async () => {
-    if (!currentRole || currentRole !== 'customer') {
+    if (!currentRole || currentRole !== 'client') {
       Alert.alert(
         'Registro Requerido',
         'Para completar tu pedido necesitas registrarte como cliente',
@@ -62,19 +81,77 @@ export default function CheckoutScreen() {
       return;
     }
 
+    if (!user) {
+      Alert.alert('Error', 'No se pudo identificar el usuario');
+      return;
+    }
+
+    if (!businessId) {
+      Alert.alert('Error', 'No se pudo identificar el negocio');
+      return;
+    }
+
     setIsProcessing(true);
 
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      // 1. Create Order
+      const { data: orderData, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          business_id: businessId,
+          client_id: user.id,
+          status: 'pending',
+          total: total,
+          subtotal: subtotal,
+          delivery_fee: deliveryFee,
+          delivery_address: {
+            address: deliveryAddress,
+            lat: 0, // Placeholder
+            lng: 0, // Placeholder
+          },
+          payment_method: paymentMethod,
+        })
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      if (!orderData) throw new Error('No se pudo crear el pedido');
+
+      // 2. Create Order Items
+      const orderItems = items.map(item => {
+        const product = getProduct(item.productId);
+        return {
+          order_id: orderData.id,
+          product_id: item.productId,
+          quantity: item.quantity,
+          price: product?.price || 0,
+          notes: item.notes || '',
+        };
+      });
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+
+      if (itemsError) throw itemsError;
+
+      // 3. Success
       clearCart();
-      router.replace('/(tabs)/orders');
-      
+      router.replace('/(tabs)/orders' as any);
+
       Alert.alert(
         '¡Pedido confirmado!',
         'Tu pedido ha sido recibido y está siendo preparado.',
         [{ text: 'OK' }]
       );
-    }, 2000);
+
+    } catch (error: any) {
+      console.error('Error placing order:', error);
+      Alert.alert('Error', `Hubo un problema al procesar tu pedido: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -295,7 +372,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.gray[200],
     minHeight: 80,
-    textAlignVertical: 'top' as const,
+    textAlignVertical: 'top',
     marginTop: SPACING.md,
   },
   summaryCard: {

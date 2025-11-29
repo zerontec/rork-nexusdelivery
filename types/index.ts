@@ -2,15 +2,15 @@ export type UserRole = 'client' | 'driver' | 'business';
 
 export type BusinessType = 'restaurant' | 'pharmacy' | 'retail' | 'services';
 
-export type OrderStatus = 
-  | 'pending' 
-  | 'confirmed' 
-  | 'preparing' 
-  | 'ready' 
-  | 'assigned' 
-  | 'picking_up' 
-  | 'in_transit' 
-  | 'delivered' 
+export type OrderStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'preparing'
+  | 'ready'
+  | 'assigned'
+  | 'picking_up'
+  | 'in_transit'
+  | 'delivered'
   | 'cancelled';
 
 export type Product = {
@@ -33,6 +33,7 @@ export type Business = {
   id: string;
   name: string;
   type: BusinessType;
+  phone: string;
   description: string;
   image: string;
   rating: number;
@@ -87,6 +88,7 @@ export type Order = {
 export type Driver = {
   id: string;
   name: string;
+  phone: string;
   photo: string;
   rating: number;
   reviews: number;

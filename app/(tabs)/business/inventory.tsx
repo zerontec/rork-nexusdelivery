@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,23 +6,68 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { Search, Package, AlertTriangle, Edit, Trash2 } from 'lucide-react-native';
+import { Stack, useRouter, useFocusEffect } from 'expo-router';
+import { Search, Package, AlertTriangle, Edit, Trash2, Plus } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
-import { MOCK_PRODUCTS } from '@/mocks/products';
 import { Product } from '@/types';
+import { useApp } from '@/providers/AppProvider';
+import { supabase } from '@/lib/supabase';
 
 export default function InventoryScreen() {
   const router = useRouter();
-  const businessId = 'b1';
+  const { businessProfile } = useApp();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'low' | 'out'>('all');
 
-  const products = useMemo(() => {
-    return MOCK_PRODUCTS.filter((p) => p.businessId === businessId);
-  }, [businessId]);
+  const fetchProducts = async () => {
+    if (!businessProfile?.id) return;
+
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .eq('business_id', businessProfile.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        const formattedProducts: Product[] = data.map(p => ({
+          id: p.id,
+          businessId: p.business_id,
+          name: p.name,
+          description: p.description,
+          price: p.price,
+          image: p.image,
+          category: p.category,
+          stock: p.stock,
+          rating: p.rating || 0,
+          reviews: p.reviews || 0,
+          isNew: p.is_new || false,
+          isBestSeller: p.is_best_seller || false,
+          discount: p.discount,
+          available: p.available ?? true,
+        }));
+        setProducts(formattedProducts);
+      }
+    } catch (error) {
+      console.error('Error fetching inventory:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchProducts();
+    }, [businessProfile?.id])
+  );
 
   const filteredProducts = useMemo(() => {
     let filtered = products;
@@ -66,9 +111,29 @@ export default function InventoryScreen() {
     { id: 'out' as const, label: 'Agotados', count: stats.outOfStock },
   ];
 
+  if (isLoading && products.length === 0) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: 'Inventario' }} />
+      <Stack.Screen
+        options={{
+          title: 'Inventario',
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => router.push('/business/add-product')}
+              style={styles.addButton}
+            >
+              <Plus size={24} color={COLORS.primary} />
+            </TouchableOpacity>
+          ),
+        }}
+      />
 
       <View style={styles.header}>
         <View style={styles.searchContainer}>
@@ -138,6 +203,14 @@ export default function InventoryScreen() {
                 ? 'No se encontraron productos con ese nombre'
                 : 'Agrega productos a tu inventario'}
             </Text>
+            {!searchQuery && (
+              <TouchableOpacity
+                style={styles.emptyButton}
+                onPress={() => router.push('/business/add-product')}
+              >
+                <Text style={styles.emptyButtonText}>Agregar Producto</Text>
+              </TouchableOpacity>
+            )}
           </Card>
         ) : (
           filteredProducts.map((product) => {
@@ -170,9 +243,12 @@ export default function InventoryScreen() {
                   </View>
 
                   <View style={styles.productActions}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.actionButton}
-                      onPress={() => router.push(`/business/edit-product?id=${product.id}` as any)}
+                      onPress={() => router.push({
+                        pathname: '/business/edit-product',
+                        params: { id: product.id }
+                      })}
                     >
                       <Edit size={18} color={COLORS.primary} />
                     </TouchableOpacity>
@@ -197,6 +273,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.gray[50],
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     padding: SPACING.md,
@@ -284,6 +364,17 @@ const styles = StyleSheet.create({
     color: COLORS.gray[500],
     marginTop: SPACING.xs,
     textAlign: 'center' as const,
+    marginBottom: SPACING.md,
+  },
+  emptyButton: {
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  emptyButtonText: {
+    color: COLORS.white,
+    fontWeight: TYPOGRAPHY.fontWeight.semiBold,
   },
   productCard: {
     padding: SPACING.md,
@@ -347,5 +438,8 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: TYPOGRAPHY.fontSize.xs,
     fontWeight: TYPOGRAPHY.fontWeight.semiBold,
+  },
+  addButton: {
+    marginRight: SPACING.md,
   },
 });

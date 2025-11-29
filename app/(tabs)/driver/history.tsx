@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import {
@@ -18,51 +19,109 @@ import {
 } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
-import { MOCK_ORDERS } from '@/mocks/orders';
-import { MOCK_BUSINESSES } from '@/mocks/businesses';
+import { useApp } from '@/providers/AppProvider';
+import { supabase } from '@/lib/supabase';
 
 type FilterStatus = 'all' | 'completed' | 'cancelled';
 
 export default function DriverHistoryScreen() {
+  const { user } = useApp();
   const [filter, setFilter] = useState<FilterStatus>('all');
+  const [allOrders, setAllOrders] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchHistory = async () => {
+      setIsLoading(true);
+      try {
+        console.log('[DriverHistory] Fetching orders for driver:', user.id);
+
+        // Fetch orders without business relationship
+        const { data: orders, error } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('driver_id', user.id)
+          .in('status', ['delivered', 'cancelled'])
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('[DriverHistory] Error:', error);
+          setAllOrders([]);
+          return;
+        }
+
+        if (orders && orders.length > 0) {
+          console.log('[DriverHistory] Found orders:', orders.length);
+
+          // Fetch business info for each order
+          const ordersWithBusiness = await Promise.all(
+            orders.map(async (order) => {
+              let businessData = null;
+              if (order.business_id) {
+                const { data } = await supabase
+                  .from('businesses')
+                  .select('*')
+                  .eq('id', order.business_id)
+                  .single();
+                businessData = data;
+              }
+
+              return {
+                ...order,
+                business: businessData,
+                // Ensure createdAt is available if it's named created_at in DB
+                createdAt: order.created_at
+              };
+            })
+          );
+
+          setAllOrders(ordersWithBusiness);
+        } else {
+          console.log('[DriverHistory] No orders found');
+          setAllOrders([]);
+        }
+      } catch (error) {
+        console.error('[DriverHistory] Error fetching history:', error);
+        setAllOrders([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchHistory();
+  }, [user]);
 
   const deliveredOrders = useMemo(() => {
-    const baseOrders = MOCK_ORDERS.filter(
-      (o) => o.status === 'delivered' || o.status === 'cancelled'
-    );
-
-    if (filter === 'all') return baseOrders;
+    if (filter === 'all') return allOrders;
     if (filter === 'completed') {
-      return baseOrders.filter((o) => o.status === 'delivered');
+      return allOrders.filter((o) => o.status === 'delivered');
     }
-    return baseOrders.filter((o) => o.status === 'cancelled');
-  }, [filter]);
+    return allOrders.filter((o) => o.status === 'cancelled');
+  }, [allOrders, filter]);
 
   const stats = useMemo(() => {
-    const completed = deliveredOrders.filter((o) => o.status === 'delivered');
-    const cancelled = deliveredOrders.filter((o) => o.status === 'cancelled');
+    const completed = allOrders.filter((o) => o.status === 'delivered');
+    const cancelled = allOrders.filter((o) => o.status === 'cancelled');
     const totalEarnings = completed.reduce(
-      (sum, o) => sum + o.total * 0.15 + 2.5,
+      (sum: number, o: any) => sum + (o.delivery_fee || 0),
       0
     );
 
     return {
-      total: deliveredOrders.length,
+      total: allOrders.length,
       completed: completed.length,
       cancelled: cancelled.length,
       totalEarnings,
     };
-  }, [deliveredOrders]);
+  }, [allOrders]);
 
   const filters: { id: FilterStatus; label: string; count: number }[] = [
     { id: 'all', label: 'Todos', count: stats.total },
     { id: 'completed', label: 'Completados', count: stats.completed },
     { id: 'cancelled', label: 'Cancelados', count: stats.cancelled },
   ];
-
-  const getBusinessName = (businessId: string) => {
-    return MOCK_BUSINESSES.find((b) => b.id === businessId)?.name || 'Negocio';
-  };
 
   const getStatusIcon = (status: string) => {
     if (status === 'delivered') {
@@ -124,7 +183,12 @@ export default function DriverHistoryScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        {deliveredOrders.length === 0 ? (
+        {isLoading ? (
+          <Card style={styles.emptyCard}>
+            <ActivityIndicator size="large" color={COLORS.secondary} />
+            <Text style={styles.emptyText}>Cargando historial...</Text>
+          </Card>
+        ) : deliveredOrders.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Package size={48} color={COLORS.gray[400]} />
             <Text style={styles.emptyTitle}>No hay entregas</Text>
@@ -134,8 +198,7 @@ export default function DriverHistoryScreen() {
           </Card>
         ) : (
           deliveredOrders.map((order) => {
-            const earnings = (order.total * 0.15 + 2.5).toFixed(2);
-            const business = MOCK_BUSINESSES.find((b) => b.id === order.businessId);
+            const earnings = (order.delivery_fee || 0).toFixed(2);
 
             return (
               <Card key={order.id} style={styles.orderCard}>
@@ -145,7 +208,7 @@ export default function DriverHistoryScreen() {
                     <View>
                       <Text style={styles.orderId}>#{order.id.slice(0, 8)}</Text>
                       <Text style={styles.businessName}>
-                        {getBusinessName(order.businessId)}
+                        {order.business?.name || 'Negocio'}
                       </Text>
                     </View>
                   </View>
@@ -170,13 +233,13 @@ export default function DriverHistoryScreen() {
                   <View style={styles.orderDetailRow}>
                     <MapPin size={14} color={COLORS.gray[600]} />
                     <Text style={styles.orderDetailText} numberOfLines={1}>
-                      {business?.location.address}
+                      {order.business?.location?.address || 'Dirección del negocio'}
                     </Text>
                   </View>
                   <View style={styles.orderDetailRow}>
                     <MapPin size={14} color={COLORS.primary} />
                     <Text style={styles.orderDetailText} numberOfLines={1}>
-                      {order.deliveryAddress.address}
+                      {order.delivery_address?.address || order.deliveryAddress?.address || 'Dirección de entrega'}
                     </Text>
                   </View>
                 </View>
@@ -185,7 +248,7 @@ export default function DriverHistoryScreen() {
                   <View style={styles.orderDate}>
                     <Calendar size={14} color={COLORS.gray[500]} />
                     <Text style={styles.orderDateText}>
-                      {new Date(order.createdAt).toLocaleDateString('es-ES', {
+                      {new Date(order.created_at).toLocaleDateString('es-ES', {
                         day: 'numeric',
                         month: 'short',
                         year: 'numeric',
@@ -193,7 +256,7 @@ export default function DriverHistoryScreen() {
                     </Text>
                     <Clock size={14} color={COLORS.gray[500]} />
                     <Text style={styles.orderDateText}>
-                      {new Date(order.createdAt).toLocaleTimeString('es-ES', {
+                      {new Date(order.created_at).toLocaleTimeString('es-ES', {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
@@ -317,11 +380,11 @@ const styles = StyleSheet.create({
   statusBadge: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
-    borderRadius: BORDER_RADIUS.sm,
+    borderRadius: BORDER_RADIUS.full,
   },
   statusText: {
     fontSize: TYPOGRAPHY.fontSize.xs,
-    fontWeight: TYPOGRAPHY.fontWeight.medium as any,
+    fontWeight: TYPOGRAPHY.fontWeight.bold as any,
   },
   orderDetails: {
     gap: SPACING.xs,
@@ -333,37 +396,36 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   orderDetailText: {
-    flex: 1,
     fontSize: TYPOGRAPHY.fontSize.sm,
     color: COLORS.gray[700],
+    flex: 1,
   },
   orderFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: SPACING.md,
     borderTopWidth: 1,
     borderTopColor: COLORS.gray[200],
+    paddingTop: SPACING.sm,
   },
   orderDate: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    flex: 1,
+    gap: SPACING.xs,
   },
   orderDateText: {
     fontSize: TYPOGRAPHY.fontSize.xs,
     color: COLORS.gray[500],
-    marginRight: SPACING.xs,
+    marginRight: SPACING.sm,
   },
   earningsBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: COLORS.secondary + '20',
+    backgroundColor: COLORS.secondary + '10',
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
-    borderRadius: BORDER_RADIUS.sm,
+    borderRadius: BORDER_RADIUS.full,
   },
   earningsText: {
     fontSize: TYPOGRAPHY.fontSize.sm,

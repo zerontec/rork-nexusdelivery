@@ -1,16 +1,16 @@
 import React from 'react';
-import { View, StyleSheet, ViewStyle, Pressable } from 'react-native';
+import { View, StyleSheet, ViewStyle, Pressable, StyleProp } from 'react-native';
 import { COLORS, BORDER_RADIUS, SHADOWS, SPACING } from '@/constants/theme';
 
 type CardProps = {
   children: React.ReactNode;
   onPress?: () => void;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   testID?: string;
 };
 
 export function Card({ children, onPress, style, testID }: CardProps) {
-  const cardStyle: ViewStyle[] = [styles.card, style];
+  const cardStyle: StyleProp<ViewStyle> = [styles.card, style];
 
   if (onPress) {
     return (

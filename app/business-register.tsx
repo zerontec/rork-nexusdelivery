@@ -7,13 +7,15 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Store, MapPin, Phone, Mail, Clock, DollarSign } from 'lucide-react-native';
+import { Store, MapPin, Phone, Mail, Clock, DollarSign, Lock } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { BusinessType } from '@/types';
 import { useApp } from '@/providers/AppProvider';
+import { supabase } from '@/lib/supabase';
 
 type FormData = {
   businessName: string;
@@ -21,6 +23,8 @@ type FormData = {
   description: string;
   phone: string;
   email: string;
+  password?: string;
+  confirmPassword?: string;
   address: string;
   deliveryTime: string;
   deliveryFee: string;
@@ -29,18 +33,21 @@ type FormData = {
 
 export default function BusinessRegisterScreen() {
   const router = useRouter();
-  const { setRole } = useApp();
+  const { setRole, user } = useApp();
   const [formData, setFormData] = useState<FormData>({
     businessName: '',
     businessType: '',
     description: '',
     phone: '',
     email: '',
+    password: '',
+    confirmPassword: '',
     address: '',
     deliveryTime: '30-45',
     deliveryFee: '2.99',
     minimumOrder: '10.00',
   });
+  const [loading, setLoading] = useState(false);
 
   const businessTypes: { value: BusinessType; label: string }[] = [
     { value: 'restaurant', label: 'Restaurante' },
@@ -70,6 +77,18 @@ export default function BusinessRegisterScreen() {
       Alert.alert('Error', 'Por favor ingresa un correo electrónico');
       return false;
     }
+
+    if (!user) {
+      if (!formData.password || formData.password.length < 6) {
+        Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres');
+        return false;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        Alert.alert('Error', 'Las contraseñas no coinciden');
+        return false;
+      }
+    }
+
     if (!formData.address.trim()) {
       Alert.alert('Error', 'Por favor ingresa la dirección de tu negocio');
       return false;
@@ -77,24 +96,94 @@ export default function BusinessRegisterScreen() {
     return true;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
 
+    setLoading(true);
     console.log('[BusinessRegister] Submitting form:', formData);
 
-    Alert.alert(
-      'Registro Exitoso',
-      'Tu negocio ha sido registrado. Ahora puedes gestionar tu dashboard.',
-      [
-        {
-          text: 'Ir al Dashboard',
-          onPress: () => {
-            setRole('business');
-            router.replace('/(tabs)/business' as any);
+    try {
+      let userId = user?.id;
+
+      // If no user logged in, create account first
+      if (!userId) {
+        console.log('[BusinessRegister] Creating new user account...');
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password!,
+          options: {
+            data: {
+              full_name: formData.businessName, // Use business name as user name for now
+              phone: formData.phone,
+              role: 'business',
+            },
           },
-        },
-      ]
-    );
+        });
+
+        if (authError) throw authError;
+        if (!authData.user) throw new Error('No se pudo crear el usuario');
+
+        userId = authData.user.id;
+        console.log('[BusinessRegister] User created:', userId);
+      }
+
+      // Create Business
+      const { data, error } = await supabase
+        .from('businesses')
+        .insert({
+          name: formData.businessName,
+          type: formData.businessType,
+          description: formData.description,
+          phone: formData.phone,
+          email: formData.email,
+          location: {
+            address: formData.address,
+            lat: 0,
+            lng: 0,
+          },
+          delivery_time: formData.deliveryTime,
+          delivery_fee: parseFloat(formData.deliveryFee),
+          minimum_order: parseFloat(formData.minimumOrder),
+          owner_id: userId,
+          is_open: true,
+          rating: 0,
+          reviews: 0,
+          image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80',
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      console.log('[BusinessRegister] Business created:', data);
+
+      // Ensure role is set (redundant if signUp handled it, but good for existing users)
+      if (user) {
+        const { error: roleError } = await supabase.auth.updateUser({
+          data: { role: 'business' }
+        });
+        if (roleError) console.error('Error updating role:', roleError);
+      }
+
+      Alert.alert(
+        'Registro Exitoso',
+        'Tu negocio ha sido registrado. Ahora puedes gestionar tu dashboard.',
+        [
+          {
+            text: 'Ir al Dashboard',
+            onPress: () => {
+              setRole('business');
+              router.replace('/(tabs)/business' as any);
+            },
+          },
+        ]
+      );
+    } catch (error: any) {
+      console.error('[BusinessRegister] Error:', error);
+      Alert.alert('Error', error.message || 'No se pudo registrar el negocio');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -211,6 +300,40 @@ export default function BusinessRegisterScreen() {
             </View>
           </View>
 
+          {!user && (
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Contraseña *</Text>
+                <View style={styles.inputContainer}>
+                  <Lock size={20} color={COLORS.gray[400]} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Mínimo 6 caracteres"
+                    value={formData.password}
+                    onChangeText={(value) => updateField('password', value)}
+                    placeholderTextColor={COLORS.gray[400]}
+                    secureTextEntry
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Confirmar Contraseña *</Text>
+                <View style={styles.inputContainer}>
+                  <Lock size={20} color={COLORS.gray[400]} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Repite tu contraseña"
+                    value={formData.confirmPassword}
+                    onChangeText={(value) => updateField('confirmPassword', value)}
+                    placeholderTextColor={COLORS.gray[400]}
+                    secureTextEntry
+                  />
+                </View>
+              </View>
+            </>
+          )}
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Dirección *</Text>
             <View style={styles.inputContainer}>
@@ -228,6 +351,7 @@ export default function BusinessRegisterScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Configuración de Entrega</Text>
+          {/* ... rest of the form ... */}
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Tiempo de Entrega (min)</Text>
@@ -282,7 +406,7 @@ export default function BusinessRegisterScreen() {
           </Text>
         </View>
 
-        <Button onPress={handleSubmit} size="lg">
+        <Button onPress={handleSubmit} size="lg" loading={loading}>
           Registrar Negocio
         </Button>
       </ScrollView>

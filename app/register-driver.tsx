@@ -15,12 +15,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { User, Mail, Lock, Phone, CreditCard, ArrowLeft, Eye, EyeOff, Check, FileText } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { useApp } from '@/providers/AppProvider';
+import { supabase } from '@/lib/supabase';
 
 export default function RegisterDriverScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { setRole } = useApp();
-  
+  // const { setRole } = useApp();
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -44,17 +45,59 @@ export default function RegisterDriverScreen() {
 
     if (formData.password !== formData.confirmPassword) {
       console.log('[RegisterDriver] Passwords do not match');
+      alert('Passwords do not match');
       return;
     }
 
-    console.log('[RegisterDriver] Registering driver:', formData.email);
     setLoading(true);
 
-    setTimeout(() => {
+    try {
+      const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.name,
+            phone: formData.phone,
+            vehicle_type: formData.vehicleType,
+            license_number: formData.licenseNumber,
+            role: 'driver',
+          },
+        },
+      });
+
+      if (signUpError) throw signUpError;
+
+      if (user) {
+        // Create driver profile
+        const { error: driverError } = await supabase
+          .from('drivers')
+          .insert({
+            id: user.id,
+            name: formData.name,
+            phone: formData.phone,
+            vehicle_type: formData.vehicleType,
+            license_number: formData.licenseNumber,
+            status: 'offline',
+            is_approved: false,
+          });
+
+        if (driverError) {
+          console.error('[RegisterDriver] Error creating driver profile:', driverError);
+          // Optional: Delete auth user if profile creation fails to maintain consistency
+          // await supabase.auth.admin.deleteUser(user.id);
+          throw new Error('Error creating driver profile');
+        }
+
+        console.log('[RegisterDriver] Registration successful - pending approval');
+        router.replace('/driver-pending' as any);
+      }
+    } catch (error: any) {
+      console.error('[RegisterDriver] Error:', error.message);
+      alert(error.message);
+    } finally {
       setLoading(false);
-      console.log('[RegisterDriver] Registration successful - pending approval');
-      router.replace('/driver-pending' as any);
-    }, 1500);
+    }
   };
 
   return (
@@ -74,7 +117,7 @@ export default function RegisterDriverScreen() {
           headerShadowVisible: false,
         }}
       />
-      
+
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

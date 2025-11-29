@@ -15,12 +15,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Mail, Lock, ArrowLeft, Eye, EyeOff } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { useApp } from '@/providers/AppProvider';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { setRole } = useApp();
-  
+  // const { setRole } = useApp(); // Role is handled by AppProvider via Supabase
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -28,6 +29,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email || !password) {
+      // TODO: Show error toast
       console.log('[Login] Missing credentials');
       return;
     }
@@ -35,12 +37,37 @@ export default function LoginScreen() {
     console.log('[Login] Attempting login with:', email);
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        console.error('[Login] Error:', error.message);
+        // TODO: Show error toast
+        alert(error.message); // Temporary alert
+        return;
+      }
+
       console.log('[Login] Login successful');
-      setRole('customer');
+      // Navigation is handled by AppProvider's onAuthStateChange or we can force it here if needed, 
+      // but usually the auth state change triggers a re-render or navigation in _layout.
+      // For now, we'll let the user stay or redirect if the layout listens to auth state.
+      // However, the current _layout doesn't auto-redirect based on auth state yet (it's in the plan to be reactive but maybe not fully implemented in _layout).
+      // Let's manually redirect for now to be safe, or rely on the AppProvider update.
+      // The AppProvider updates state, but we might need to trigger navigation.
+
+      // Actually, let's check if we need to fetch the role first. AppProvider does that.
+      // We can just redirect to home.
       router.replace('/(tabs)/home' as any);
-    }, 1000);
+
+    } catch (error) {
+      console.error('[Login] Unexpected error:', error);
+      alert('An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -60,7 +87,7 @@ export default function LoginScreen() {
           headerShadowVisible: false,
         }}
       />
-      
+
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

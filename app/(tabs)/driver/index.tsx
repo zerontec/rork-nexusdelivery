@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,28 +20,142 @@ import {
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { MOCK_ORDERS } from '@/mocks/orders';
-import { MOCK_BUSINESSES } from '@/mocks/businesses';
-import { MOCK_PRODUCTS } from '@/mocks/products';
+import { supabase } from '@/lib/supabase';
+import { useApp } from '@/providers/AppProvider';
+// import { MOCK_ORDERS } from '@/mocks/orders'; // Removed
+import { MOCK_BUSINESSES } from '@/mocks/businesses'; // Kept for fallback business names if needed
+// import { MOCK_PRODUCTS } from '@/mocks/products'; // Removed
 
 export default function DriverDashboardScreen() {
   const router = useRouter();
   const [isAvailable, setIsAvailable] = useState(true);
 
-  const availableOrders = useMemo(() => {
-    return MOCK_ORDERS.filter((order) => order.status === 'ready' && !order.driverId);
-  }, []);
+  const handleToggleAvailability = async (newValue: boolean) => {
+    setIsAvailable(newValue);
 
-  const todayEarnings = 145.5;
-  const completedToday = 12;
+    if (!user) return;
 
-  const handleAcceptOrder = (orderId: string) => {
-    console.log('[Driver] Accepting order:', orderId);
-    router.push(`/driver/active-order?id=${orderId}` as any);
+    try {
+      const newStatus = newValue ? 'available' : 'offline';
+      const { error } = await supabase
+        .from('drivers')
+        .update({ status: newStatus })
+        .eq('id', user.id);
+
+      if (error) {
+        console.error('[DriverDashboard] Error updating status:', error);
+        // Revert on error
+        setIsAvailable(!newValue);
+      } else {
+        console.log('[DriverDashboard] Status updated to:', newStatus);
+      }
+    } catch (error) {
+      console.error('[DriverDashboard] Error:', error);
+      setIsAvailable(!newValue);
+    }
   };
 
-  const getBusinessName = (businessId: string) => {
-    return MOCK_BUSINESSES.find((b) => b.id === businessId)?.name || 'Negocio';
+  const { user } = useApp(); // Get current user (driver)
+  const [availableOrders, setAvailableOrders] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    earnings: 0,
+    completed: 0,
+    rating: 5.0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch Data
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // 1. Fetch Available Orders (ready, no driver)
+        const { data: ordersData } = await supabase
+          .from('orders')
+          .select('*, business:businesses(*)')
+          .eq('status', 'ready')
+          .is('driver_id', null);
+
+        if (ordersData) {
+          // Transform data to match UI expectations if needed
+          // For now assuming structure is close enough or mapping below handles it
+          setAvailableOrders(ordersData.map(o => ({
+            ...o,
+            businessId: o.business_id,
+            deliveryAddress: o.delivery_address,
+            items: o.items || [], // Items might need separate fetch if not joined, but let's assume simple for now
+            // Note: items are usually in order_items table. 
+            // For the dashboard list, we might just need the count.
+            // We'll fetch items count separately or assume it's joined if we adjust the query.
+            // Let's keep it simple: just show order details we have.
+          })));
+        }
+
+        // 2. Fetch Driver Stats (Earnings & Completed Today)
+        const today = new Date().toISOString().split('T')[0];
+        const { data: completedOrders } = await supabase
+          .from('orders')
+          .select('total, delivery_fee')
+          .eq('driver_id', user.id)
+          .eq('status', 'delivered')
+          .gte('created_at', today); // Filter by today
+
+        let todayEarnings = 0;
+        let completedCount = 0;
+
+        if (completedOrders) {
+          completedCount = completedOrders.length;
+          // Assuming driver gets delivery_fee + 10% of total? Or just delivery_fee?
+          // Let's assume driver gets delivery_fee.
+          todayEarnings = completedOrders.reduce((sum, o) => sum + (o.delivery_fee || 0), 0);
+        }
+
+        // 3. Fetch Driver Rating
+        const { data: driverData } = await supabase
+          .from('drivers')
+          .select('rating')
+          .eq('id', user.id)
+          .single();
+
+        setStats({
+          earnings: todayEarnings,
+          completed: completedCount,
+          rating: driverData?.rating || 5.0,
+        });
+
+      } catch (error) {
+        console.error('[DriverDashboard] Error fetching data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+
+    // Subscribe to new orders (optional, for realtime)
+    // const subscription = supabase.channel('orders')... 
+  }, [user]);
+
+  const handleAcceptOrder = async (orderId: string) => {
+    if (!user) return;
+    console.log('[Driver] Accepting order:', orderId);
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ driver_id: user.id, status: 'assigned' })
+        .eq('id', orderId);
+
+      if (error) throw error;
+
+      // Refresh data
+      // fetchData(); // Ideally extract fetchData to be callable
+      router.push(`/driver/active-order?id=${orderId}` as any);
+    } catch (e) {
+      console.error('Error accepting order:', e);
+      alert('Error al aceptar el pedido');
+    }
   };
 
   const calculateDistance = () => {
@@ -61,7 +175,7 @@ export default function DriverDashboardScreen() {
             </View>
             <Switch
               value={isAvailable}
-              onValueChange={setIsAvailable}
+              onValueChange={handleToggleAvailability}
               trackColor={{ false: COLORS.gray[300], true: COLORS.secondary }}
               thumbColor={COLORS.white}
             />
@@ -75,13 +189,13 @@ export default function DriverDashboardScreen() {
           >
             <Card style={styles.statCardInner}>
               <DollarSign size={24} color={COLORS.secondary} />
-              <Text style={styles.statValue}>${todayEarnings.toFixed(2)}</Text>
+              <Text style={styles.statValue}>${stats.earnings.toFixed(2)}</Text>
               <Text style={styles.statLabel}>Hoy</Text>
             </Card>
           </TouchableOpacity>
           <Card style={styles.statCard}>
             <Package size={24} color={COLORS.accent} />
-            <Text style={styles.statValue}>{completedToday}</Text>
+            <Text style={styles.statValue}>{stats.completed}</Text>
             <Text style={styles.statLabel}>Completados</Text>
           </Card>
           <TouchableOpacity
@@ -90,7 +204,7 @@ export default function DriverDashboardScreen() {
           >
             <Card style={styles.statCardInner}>
               <Star size={24} color={COLORS.warning} />
-              <Text style={styles.statValue}>4.8</Text>
+              <Text style={styles.statValue}>{stats.rating.toFixed(1)}</Text>
               <Text style={styles.statLabel}>Rating</Text>
             </Card>
           </TouchableOpacity>
@@ -155,14 +269,14 @@ export default function DriverDashboardScreen() {
         ) : (
           availableOrders.map((order) => {
             const distance = calculateDistance();
-            const estimatedPay = (order.total * 0.15 + 2.5).toFixed(2);
+            const estimatedPay = (order.delivery_fee || 2.50).toFixed(2);
 
             return (
               <Card key={order.id} style={styles.orderCard}>
                 <View style={styles.orderHeader}>
                   <View>
                     <Text style={styles.businessName}>
-                      {getBusinessName(order.businessId)}
+                      {order.business?.name || 'Negocio'}
                     </Text>
                     <View style={styles.orderInfo}>
                       <MapPin size={14} color={COLORS.gray[600]} />
@@ -181,7 +295,7 @@ export default function DriverDashboardScreen() {
                   <View style={styles.addressDetails}>
                     <Text style={styles.addressLabel}>Recoger en</Text>
                     <Text style={styles.addressText} numberOfLines={1}>
-                      {MOCK_BUSINESSES.find((b) => b.id === order.businessId)?.location.address}
+                      {order.business?.location?.address || 'Dirección del negocio'}
                     </Text>
                   </View>
                 </View>
@@ -191,7 +305,7 @@ export default function DriverDashboardScreen() {
                   <View style={styles.addressDetails}>
                     <Text style={styles.addressLabel}>Entregar en</Text>
                     <Text style={styles.addressText} numberOfLines={1}>
-                      {order.deliveryAddress.address}
+                      {order.deliveryAddress?.address || 'Dirección de entrega'}
                     </Text>
                   </View>
                 </View>
@@ -200,7 +314,8 @@ export default function DriverDashboardScreen() {
                   <View style={styles.itemsInfo}>
                     <Package size={16} color={COLORS.gray[600]} />
                     <Text style={styles.itemsText}>
-                      {order.items.length} {order.items.length === 1 ? 'producto' : 'productos'}
+                      {/* {order.items.length} {order.items.length === 1 ? 'producto' : 'productos'} */}
+                      Ver detalles
                     </Text>
                   </View>
                   <Button

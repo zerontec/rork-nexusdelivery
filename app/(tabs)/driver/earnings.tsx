@@ -1,40 +1,127 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { DollarSign, TrendingUp, Calendar, Award } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
+import { useApp } from '@/providers/AppProvider';
+import { supabase } from '@/lib/supabase';
 
 type Period = 'today' | 'week' | 'month';
 
 export default function EarningsScreen() {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('today');
 
-  const earnings = {
-    today: 145.5,
-    week: 892.3,
-    month: 3420.8,
-  };
+  const { user } = useApp();
+  const [earnings, setEarnings] = useState({
+    today: 0,
+    week: 0,
+    month: 0,
+  });
+  const [stats, setStats] = useState({
+    today: { orders: 0, hours: 0, avgPerOrder: 0 },
+    week: { orders: 0, hours: 0, avgPerOrder: 0 },
+    month: { orders: 0, hours: 0, avgPerOrder: 0 },
+  });
+  const [recentPayments, setRecentPayments] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const stats = {
-    today: { orders: 12, hours: 6.5, avgPerOrder: 12.13 },
-    week: { orders: 68, hours: 42, avgPerOrder: 13.12 },
-    month: { orders: 285, hours: 178, avgPerOrder: 12.0 },
-  };
+  useEffect(() => {
+    if (!user) return;
 
-  const recentPayments = [
-    { date: '2025-01-11', amount: 145.5, orders: 12 },
-    { date: '2025-01-10', amount: 132.3, orders: 11 },
-    { date: '2025-01-09', amount: 158.7, orders: 13 },
-    { date: '2025-01-08', amount: 124.2, orders: 10 },
-    { date: '2025-01-07', amount: 167.9, orders: 14 },
-  ];
+    const fetchEarnings = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch all delivered orders for this driver
+        const { data: orders } = await supabase
+          .from('orders')
+          .select('created_at, delivery_fee, total')
+          .eq('driver_id', user.id)
+          .eq('status', 'delivered')
+          .order('created_at', { ascending: false });
+
+        if (orders) {
+          const now = new Date();
+          const todayStr = now.toISOString().split('T')[0];
+          const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+          let todaySum = 0, weekSum = 0, monthSum = 0;
+          let todayCount = 0, weekCount = 0, monthCount = 0;
+
+          const paymentsMap: Record<string, { amount: number, orders: number }> = {};
+
+          orders.forEach(order => {
+            const orderDate = new Date(order.created_at);
+            const dateStr = order.created_at.split('T')[0];
+            const amount = order.delivery_fee || 0;
+
+            // Today
+            if (dateStr === todayStr) {
+              todaySum += amount;
+              todayCount++;
+            }
+
+            // Week
+            if (orderDate >= oneWeekAgo) {
+              weekSum += amount;
+              weekCount++;
+            }
+
+            // Month
+            if (orderDate >= oneMonthAgo) {
+              monthSum += amount;
+              monthCount++;
+            }
+
+            // Group for recent payments
+            if (!paymentsMap[dateStr]) {
+              paymentsMap[dateStr] = { amount: 0, orders: 0 };
+            }
+            paymentsMap[dateStr].amount += amount;
+            paymentsMap[dateStr].orders += 1;
+          });
+
+          setEarnings({
+            today: todaySum,
+            week: weekSum,
+            month: monthSum,
+          });
+
+          setStats({
+            today: { orders: todayCount, hours: todayCount * 0.5, avgPerOrder: todayCount ? todaySum / todayCount : 0 },
+            week: { orders: weekCount, hours: weekCount * 0.5, avgPerOrder: weekCount ? weekSum / weekCount : 0 },
+            month: { orders: monthCount, hours: monthCount * 0.5, avgPerOrder: monthCount ? monthSum / monthCount : 0 },
+          });
+
+          // Convert paymentsMap to array
+          const paymentsArray = Object.keys(paymentsMap)
+            .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+            .slice(0, 5)
+            .map(date => ({
+              date,
+              amount: paymentsMap[date].amount,
+              orders: paymentsMap[date].orders,
+            }));
+
+          setRecentPayments(paymentsArray);
+        }
+      } catch (error) {
+        console.error('[Earnings] Error fetching earnings:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchEarnings();
+  }, [user]);
 
   const periods: { id: Period; label: string }[] = [
     { id: 'today', label: 'Hoy' },

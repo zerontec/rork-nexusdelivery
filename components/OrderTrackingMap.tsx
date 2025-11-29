@@ -36,8 +36,10 @@ export function OrderTrackingMap({
         setProgress(0.5);
         break;
       case 'assigned':
-      case 'picking_up':
         setProgress(0.65);
+        break;
+      case 'picking_up':
+        setProgress(0.75);
         break;
       case 'in_transit':
         setProgress(0.85);

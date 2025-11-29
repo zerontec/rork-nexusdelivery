@@ -7,20 +7,22 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Search, ShoppingCart, TrendingUp, Store, Truck, Briefcase, Percent, Star } from 'lucide-react-native';
+import { Search, ShoppingCart, TrendingUp, Store, Truck, Briefcase, Percent, Star, AlertCircle } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
-import { MOCK_BUSINESSES } from '@/mocks/businesses';
 import { BusinessCard } from '@/components/ui/BusinessCard';
 import { useCart } from '@/providers/CartProvider';
 import { useApp } from '@/providers/AppProvider';
 import { Business } from '@/types';
+import { useBusinesses } from '@/hooks/useBusinesses';
 
 export default function HomeScreen() {
   const router = useRouter();
   const { itemCount } = useCart();
   const { setRole } = useApp();
+  const { businesses, isLoading, error, refreshBusinesses } = useBusinesses();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
@@ -35,7 +37,7 @@ export default function HomeScreen() {
   );
 
   const filteredBusinesses = useMemo(() => {
-    let filtered = MOCK_BUSINESSES;
+    let filtered = businesses;
 
     if (selectedCategory !== 'all') {
       filtered = filtered.filter((b) => b.type === selectedCategory);
@@ -52,12 +54,32 @@ export default function HomeScreen() {
     }
 
     return filtered;
-  }, [searchQuery, selectedCategory]);
+  }, [businesses, searchQuery, selectedCategory]);
 
   const handleBusinessPress = (business: Business) => {
     console.log('[Home] Business selected:', business.id);
     router.push(`/home/business/${business.id}` as any);
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <AlertCircle size={48} color={COLORS.error} />
+        <Text style={styles.errorText}>Error al cargar negocios</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={refreshBusinesses}>
+          <Text style={styles.retryButtonText}>Reintentar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -189,6 +211,8 @@ export default function HomeScreen() {
             </Text>
           </View>
         }
+        refreshing={isLoading}
+        onRefresh={refreshBusinesses}
       />
     </View>
   );
@@ -312,7 +336,7 @@ const styles = StyleSheet.create({
   },
   promoButtonText: {
     fontSize: 11,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontWeight: TYPOGRAPHY.fontWeight.semiBold,
     color: COLORS.white,
   },
   offersSection: {
@@ -364,5 +388,25 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+  },
+  centerContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.md,
+  },
+  errorText: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    color: COLORS.gray[600],
+    textAlign: 'center',
+  },
+  retryButton: {
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.md,
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  retryButtonText: {
+    color: COLORS.white,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
   },
 });

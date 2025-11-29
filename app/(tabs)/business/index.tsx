@@ -20,46 +20,80 @@ import {
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { MOCK_ORDERS } from '@/mocks/orders';
-import { MOCK_PRODUCTS } from '@/mocks/products';
+import { supabase } from '@/lib/supabase';
+import { useOrders } from '@/providers/OrdersProvider';
 import { useApp } from '@/providers/AppProvider';
 
 export default function BusinessDashboardScreen() {
   const router = useRouter();
   const { businessProfile } = useApp();
+  const { orders } = useOrders();
+  const [productsCount, setProductsCount] = React.useState(0);
+  const [lowStockCount, setLowStockCount] = React.useState(0);
 
-  const businessId = businessProfile?.id || 'b1';
+  const businessId = businessProfile?.id;
   const businessName = businessProfile?.businessName || 'Mi Negocio';
 
+  React.useEffect(() => {
+    if (!businessId) return;
+
+    const fetchProductStats = async () => {
+      try {
+        const { data: products, error } = await supabase
+          .from('products')
+          .select('stock')
+          .eq('business_id', businessId);
+
+        if (error) throw error;
+
+        if (products) {
+          setProductsCount(products.length);
+          setLowStockCount(products.filter(p => p.stock < 10).length);
+        }
+      } catch (error) {
+        console.error('Error fetching product stats:', error);
+      }
+    };
+
+    fetchProductStats();
+  }, [businessId]);
+
   const stats = useMemo(() => {
-    const orders = MOCK_ORDERS.filter((o) => o.businessId === businessId);
-    const todayOrders = orders.filter((o) => {
+    if (!businessId) return {
+      todayOrders: 0,
+      todayRevenue: 0,
+      activeOrders: 0,
+      lowStockCount: 0,
+    };
+
+    const businessOrders = orders.filter((o) => o.businessId === businessId);
+
+    const todayOrders = businessOrders.filter((o) => {
       const orderDate = new Date(o.createdAt);
       const today = new Date();
       return orderDate.toDateString() === today.toDateString();
     });
 
     const todayRevenue = todayOrders.reduce((sum, o) => sum + o.total, 0);
-    const activeOrders = orders.filter(
+    const activeOrders = businessOrders.filter(
       (o) => !['delivered', 'cancelled'].includes(o.status)
     ).length;
-
-    const products = MOCK_PRODUCTS.filter((p) => p.businessId === businessId);
-    const lowStockProducts = products.filter((p) => p.stock < 10);
 
     return {
       todayOrders: todayOrders.length,
       todayRevenue,
       activeOrders,
-      lowStockCount: lowStockProducts.length,
+      lowStockCount,
     };
-  }, [businessId]);
+  }, [businessId, orders, lowStockCount]);
 
   const recentOrders = useMemo(() => {
-    return MOCK_ORDERS.filter((o) => o.businessId === businessId)
+    if (!businessId) return [];
+    return orders
+      .filter((o) => o.businessId === businessId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 5);
-  }, [businessId]);
+  }, [businessId, orders]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -104,7 +138,7 @@ export default function BusinessDashboardScreen() {
             <Text style={styles.greeting}>Hola, {businessName}</Text>
             <Text style={styles.subGreeting}>Aquí está tu resumen de hoy</Text>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.addButton}
             onPress={() => router.push('/business/add-product' as any)}
           >
