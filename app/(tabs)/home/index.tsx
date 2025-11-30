@@ -10,9 +10,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Search, ShoppingCart, TrendingUp, Store, Truck, Briefcase, Percent, Star, AlertCircle } from 'lucide-react-native';
+import { Search, ShoppingCart, Store, Truck, Briefcase, Percent, Star, AlertCircle } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { BusinessCard } from '@/components/ui/BusinessCard';
+import { NotificationButton } from '@/components/ui/NotificationButton';
 import { useCart } from '@/providers/CartProvider';
 import { useApp } from '@/providers/AppProvider';
 import { Business } from '@/types';
@@ -132,6 +133,8 @@ export default function HomeScreen() {
                 </View>
               )}
             </TouchableOpacity>
+
+            <NotificationButton />
           </View>
         </View>
 
@@ -310,6 +313,8 @@ const styles = StyleSheet.create({
   },
   categoryTextActive: {
     color: COLORS.white,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: TYPOGRAPHY.fontWeight.medium,
   },
   listContent: {
     padding: SPACING.lg,

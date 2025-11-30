@@ -124,3 +124,26 @@ export type User = {
     isDefault: boolean;
   }[];
 };
+
+export type NotificationType =
+  | 'order_confirmed'      // Negocio confirmó pedido
+  | 'driver_assigned'      // Repartidor asignado a pedido
+  | 'order_picking_up'     // Repartidor recogiendo pedido
+  | 'order_in_transit'     // Pedido en camino
+  | 'order_delivered'      // Pedido entregado
+  | 'order_cancelled'      // Pedido cancelado
+  | 'new_order'            // Nuevo pedido para negocio
+  | 'order_ready'          // Pedido listo para recoger (repartidor)
+  | 'payment_received';    // Pago recibido
+
+export type Notification = {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  orderId?: string;
+  metadata?: Record<string, any>;
+  isRead: boolean;
+  createdAt: Date;
+};

@@ -1,114 +1,104 @@
-import React, { useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import {
-  DollarSign,
-  TrendingUp,
-  Package,
-  Clock,
-  ShoppingBag,
-  AlertCircle,
-  Plus,
-  BarChart3,
-} from 'lucide-react-native';
+import { Plus, DollarSign, ShoppingBag, Clock, AlertCircle, Package, TrendingUp, BarChart3 } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { supabase } from '@/lib/supabase';
-import { useOrders } from '@/providers/OrdersProvider';
+import { NotificationButton } from '@/components/ui/NotificationButton';
 import { useApp } from '@/providers/AppProvider';
+import { supabase } from '@/lib/supabase';
 
 export default function BusinessDashboardScreen() {
   const router = useRouter();
   const { businessProfile } = useApp();
-  const { orders } = useOrders();
-  const [productsCount, setProductsCount] = React.useState(0);
-  const [lowStockCount, setLowStockCount] = React.useState(0);
+  const businessName = businessProfile?.businessName || 'Negocio';
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState({
+    todayRevenue: 0,
+    todayOrders: 0,
+    activeOrders: 0,
+    lowStockCount: 0,
+  });
+  const [recentOrders, setRecentOrders] = useState<any[]>([]);
 
-  const businessId = businessProfile?.id;
-  const businessName = businessProfile?.businessName || 'Mi Negocio';
+  const fetchDashboardData = useCallback(async () => {
+    if (!businessProfile?.id) return;
 
-  React.useEffect(() => {
-    if (!businessId) return;
+    try {
+      setIsLoading(true);
+      const today = new Date().toISOString().split('T')[0];
 
-    const fetchProductStats = async () => {
-      try {
-        const { data: products, error } = await supabase
-          .from('products')
-          .select('stock')
-          .eq('business_id', businessId);
+      // Fetch today's orders
+      const { data: orders, error: ordersError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('business_id', businessProfile.id)
+        .gte('created_at', today);
 
-        if (error) throw error;
-
-        if (products) {
-          setProductsCount(products.length);
-          setLowStockCount(products.filter(p => p.stock < 10).length);
-        }
-      } catch (error) {
-        console.error('Error fetching product stats:', error);
+      if (ordersError) {
+        console.error('Error fetching orders:', ordersError);
+        throw ordersError;
       }
-    };
 
-    fetchProductStats();
-  }, [businessId]);
+      console.log('Business Profile ID:', businessProfile.id);
+      console.log('Today:', today);
+      console.log('Orders found:', orders?.length);
 
-  const stats = useMemo(() => {
-    if (!businessId) return {
-      todayOrders: 0,
-      todayRevenue: 0,
-      activeOrders: 0,
-      lowStockCount: 0,
-    };
 
-    const businessOrders = orders.filter((o) => o.businessId === businessId);
+      // Calculate stats
+      const todayOrders = orders?.length || 0;
+      const todayRevenue = orders?.reduce((sum, order) => sum + (order.total || 0), 0) || 0;
+      const activeOrders = orders?.filter(o => ['pending', 'confirmed', 'preparing', 'ready', 'picking_up', 'in_transit'].includes(o.status)).length || 0;
 
-    const todayOrders = businessOrders.filter((o) => {
-      const orderDate = new Date(o.createdAt);
-      const today = new Date();
-      return orderDate.toDateString() === today.toDateString();
-    });
+      // Fetch low stock count
+      const { count: lowStockCount, error: stockError } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true })
+        .eq('business_id', businessProfile.id)
+        .lt('stock', 10);
 
-    const todayRevenue = todayOrders.reduce((sum, o) => sum + o.total, 0);
-    const activeOrders = businessOrders.filter(
-      (o) => !['delivered', 'cancelled'].includes(o.status)
-    ).length;
+      if (stockError) throw stockError;
 
-    return {
-      todayOrders: todayOrders.length,
-      todayRevenue,
-      activeOrders,
-      lowStockCount,
-    };
-  }, [businessId, orders, lowStockCount]);
+      setStats({
+        todayRevenue,
+        todayOrders,
+        activeOrders,
+        lowStockCount: lowStockCount || 0,
+      });
 
-  const recentOrders = useMemo(() => {
-    if (!businessId) return [];
-    return orders
-      .filter((o) => o.businessId === businessId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 5);
-  }, [businessId, orders]);
+      // Fetch recent orders (last 5)
+      const { data: recent, error: recentError } = await supabase
+        .from('orders')
+        .select('*, items:order_items(*)')
+        .eq('business_id', businessProfile.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentError) throw recentError;
+      setRecentOrders(recent || []);
+
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [businessProfile?.id]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
-        return COLORS.warning;
-      case 'preparing':
-        return COLORS.info;
-      case 'ready':
-        return COLORS.success;
-      case 'delivered':
-        return COLORS.gray[500];
-      case 'cancelled':
-        return COLORS.error;
-      default:
-        return COLORS.gray[500];
+      case 'pending': return COLORS.warning;
+      case 'confirmed': return COLORS.info;
+      case 'preparing': return COLORS.info;
+      case 'ready': return COLORS.success;
+      case 'picking_up': return COLORS.secondary;
+      case 'in_transit': return COLORS.secondary;
+      case 'delivered': return COLORS.success;
+      case 'cancelled': return COLORS.error;
+      default: return COLORS.gray[500];
     }
   };
 
@@ -118,7 +108,6 @@ export default function BusinessDashboardScreen() {
       confirmed: 'Confirmado',
       preparing: 'Preparando',
       ready: 'Listo',
-      assigned: 'Asignado',
       picking_up: 'Recogiendo',
       in_transit: 'En camino',
       delivered: 'Entregado',
@@ -132,18 +121,24 @@ export default function BusinessDashboardScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={isLoading} onRefresh={fetchDashboardData} />
+        }
       >
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>Hola, {businessName}</Text>
             <Text style={styles.subGreeting}>Aquí está tu resumen de hoy</Text>
           </View>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => router.push('/business/add-product' as any)}
-          >
-            <Plus size={24} color={COLORS.white} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+            <NotificationButton />
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => router.push('/business/add-product' as any)}
+            >
+              <Plus size={24} color={COLORS.white} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.statsGrid}>
@@ -288,14 +283,14 @@ export default function BusinessDashboardScreen() {
                 <View style={styles.orderDetail}>
                   <Package size={16} color={COLORS.gray[600]} />
                   <Text style={styles.orderDetailText}>
-                    {order.items.length} productos
+                    {order.items?.length || 0} productos
                   </Text>
                 </View>
-                <Text style={styles.orderTotal}>${order.total.toFixed(2)}</Text>
+                <Text style={styles.orderTotal}>${(order.total || 0).toFixed(2)}</Text>
               </View>
 
               <Text style={styles.orderTime}>
-                {new Date(order.createdAt).toLocaleTimeString('es-ES', {
+                {new Date(order.created_at || order.createdAt).toLocaleTimeString('es-ES', {
                   hour: '2-digit',
                   minute: '2-digit',
                 })}

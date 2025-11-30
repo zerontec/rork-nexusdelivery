@@ -1,170 +1,209 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Switch,
-} from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import {
-  MapPin,
-  Clock,
-  DollarSign,
-  Package,
-  TrendingUp,
-  History,
-  Star,
-} from 'lucide-react-native';
+import { MapPin, Clock, Package, DollarSign, Star, TrendingUp, History } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
+import { NotificationButton } from '@/components/ui/NotificationButton';
 import { Button } from '@/components/ui/Button';
-import { supabase } from '@/lib/supabase';
 import { useApp } from '@/providers/AppProvider';
-// import { MOCK_ORDERS } from '@/mocks/orders'; // Removed
-import { MOCK_BUSINESSES } from '@/mocks/businesses'; // Kept for fallback business names if needed
-// import { MOCK_PRODUCTS } from '@/mocks/products'; // Removed
+import { supabase } from '@/lib/supabase';
 
 export default function DriverDashboardScreen() {
   const router = useRouter();
-  const [isAvailable, setIsAvailable] = useState(true);
-
-  const handleToggleAvailability = async (newValue: boolean) => {
-    setIsAvailable(newValue);
-
-    if (!user) return;
-
-    try {
-      const newStatus = newValue ? 'available' : 'offline';
-      const { error } = await supabase
-        .from('drivers')
-        .update({ status: newStatus })
-        .eq('id', user.id);
-
-      if (error) {
-        console.error('[DriverDashboard] Error updating status:', error);
-        // Revert on error
-        setIsAvailable(!newValue);
-      } else {
-        console.log('[DriverDashboard] Status updated to:', newStatus);
-      }
-    } catch (error) {
-      console.error('[DriverDashboard] Error:', error);
-      setIsAvailable(!newValue);
-    }
-  };
-
-  const { user } = useApp(); // Get current user (driver)
-  const [availableOrders, setAvailableOrders] = useState<any[]>([]);
+  const { user } = useApp();
+  const [isAvailable, setIsAvailable] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({
     earnings: 0,
     completed: 0,
     rating: 5.0,
   });
-  const [isLoading, setIsLoading] = useState(true);
+  const [availableOrders, setAvailableOrders] = useState<any[]>([]);
+  const [activeOrders, setActiveOrders] = useState<any[]>([]);
 
-  // Fetch Data
-  useEffect(() => {
+  const fetchDriverData = useCallback(async () => {
     if (!user) return;
 
-    const fetchData = async () => {
+    try {
       setIsLoading(true);
-      try {
-        // 1. Fetch Available Orders (ready, no driver)
-        const { data: ordersData } = await supabase
-          .from('orders')
-          .select('*, business:businesses(*)')
-          .eq('status', 'ready')
-          .is('driver_id', null);
+      const today = new Date().toISOString().split('T')[0];
 
-        if (ordersData) {
-          // Transform data to match UI expectations if needed
-          // For now assuming structure is close enough or mapping below handles it
-          setAvailableOrders(ordersData.map(o => ({
-            ...o,
-            businessId: o.business_id,
-            deliveryAddress: o.delivery_address,
-            items: o.items || [], // Items might need separate fetch if not joined, but let's assume simple for now
-            // Note: items are usually in order_items table. 
-            // For the dashboard list, we might just need the count.
-            // We'll fetch items count separately or assume it's joined if we adjust the query.
-            // Let's keep it simple: just show order details we have.
-          })));
-        }
+      // Fetch driver stats
+      const { count: completedCount } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('driver_id', user.id)
+        .eq('status', 'delivered')
+        .gte('created_at', today);
 
-        // 2. Fetch Driver Stats (Earnings & Completed Today)
-        const today = new Date().toISOString().split('T')[0];
-        const { data: completedOrders } = await supabase
-          .from('orders')
-          .select('total, delivery_fee')
-          .eq('driver_id', user.id)
-          .eq('status', 'delivered')
-          .gte('created_at', today); // Filter by today
+      setStats({
+        earnings: (completedCount || 0) * 2.50, // Mock earnings calculation
+        completed: completedCount || 0,
+        rating: 4.8, // Mock rating
+      });
 
-        let todayEarnings = 0;
-        let completedCount = 0;
+      // Fetch active orders (assigned to driver and in progress)
+      const { data: active, error: activeError } = await supabase
+        .from('orders')
+        .select('*, business:businesses(*)')
+        .eq('driver_id', user.id)
+        .in('status', ['picking_up', 'in_transit']);
 
-        if (completedOrders) {
-          completedCount = completedOrders.length;
-          // Assuming driver gets delivery_fee + 10% of total? Or just delivery_fee?
-          // Let's assume driver gets delivery_fee.
-          todayEarnings = completedOrders.reduce((sum, o) => sum + (o.delivery_fee || 0), 0);
-        }
+      if (activeError) throw activeError;
+      setActiveOrders(active || []);
 
-        // 3. Fetch Driver Rating
-        const { data: driverData } = await supabase
-          .from('drivers')
-          .select('rating')
-          .eq('id', user.id)
-          .single();
+      // Fetch available orders (ready for pickup and not assigned)
+      const { data: orders, error: ordersError } = await supabase
+        .from('orders')
+        .select('*, business:businesses(*)')
+        .eq('status', 'ready')
+        .is('driver_id', null);
 
-        setStats({
-          earnings: todayEarnings,
-          completed: completedCount,
-          rating: driverData?.rating || 5.0,
-        });
+      if (ordersError) throw ordersError;
+      setAvailableOrders(orders || []);
 
-      } catch (error) {
-        console.error('[DriverDashboard] Error fetching data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-
-    // Subscribe to new orders (optional, for realtime)
-    // const subscription = supabase.channel('orders')... 
+    } catch (error) {
+      console.error('Error fetching driver data:', error);
+    } finally {
+      setIsLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => {
+    fetchDriverData();
+  }, [fetchDriverData]);
+
+  const handleToggleAvailability = () => {
+    setIsAvailable(!isAvailable);
+  };
 
   const handleAcceptOrder = async (orderId: string) => {
     if (!user) return;
-    console.log('[Driver] Accepting order:', orderId);
     try {
       const { error } = await supabase
         .from('orders')
-        .update({ driver_id: user.id, status: 'assigned' })
+        .update({
+          driver_id: user.id,
+          status: 'picking_up'
+        })
         .eq('id', orderId);
 
       if (error) throw error;
 
-      // Refresh data
-      // fetchData(); // Ideally extract fetchData to be callable
-      router.push(`/driver/active-order?id=${orderId}` as any);
-    } catch (e) {
-      console.error('Error accepting order:', e);
-      alert('Error al aceptar el pedido');
+      fetchDriverData();
+    } catch (error) {
+      console.error('Error accepting order:', error);
+    }
+  };
+
+  const handleUpdateStatus = async (orderId: string, currentStatus: string) => {
+    let nextStatus = '';
+    if (currentStatus === 'picking_up') nextStatus = 'in_transit';
+    else if (currentStatus === 'in_transit') nextStatus = 'delivered';
+    else return;
+
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: nextStatus })
+        .eq('id', orderId);
+
+      if (error) throw error;
+      fetchDriverData();
+    } catch (error) {
+      console.error('Error updating status:', error);
     }
   };
 
   const calculateDistance = () => {
-    return (Math.random() * 4 + 0.5).toFixed(1);
+    return (Math.random() * 5 + 1).toFixed(1);
+  };
+
+  const renderOrderCard = (order: any, isActive: boolean) => {
+    const distance = calculateDistance();
+    const estimatedPay = (order.delivery_fee || 2.50).toFixed(2);
+
+    let actionButtonText = 'Aceptar';
+    let actionButtonColor = COLORS.primary;
+
+    if (isActive) {
+      if (order.status === 'picking_up') {
+        actionButtonText = 'Confirmar Recogida';
+        actionButtonColor = COLORS.info;
+      } else if (order.status === 'in_transit') {
+        actionButtonText = 'Confirmar Entrega';
+        actionButtonColor = COLORS.success;
+      }
+    }
+
+    return (
+      <Card key={order.id} style={styles.orderCard}>
+        <View style={styles.orderHeader}>
+          <View>
+            <Text style={styles.businessName}>
+              {order.business?.name || 'Negocio'}
+            </Text>
+            <View style={styles.orderInfo}>
+              <MapPin size={14} color={COLORS.gray[600]} />
+              <Text style={styles.orderInfoText}>{distance} km</Text>
+              <Clock size={14} color={COLORS.gray[600]} />
+              <Text style={styles.orderInfoText}>~15 min</Text>
+            </View>
+          </View>
+          <View style={styles.paymentBadge}>
+            <Text style={styles.paymentText}>${estimatedPay}</Text>
+          </View>
+        </View>
+
+        <View style={styles.addressContainer}>
+          <View style={styles.addressDot} />
+          <View style={styles.addressDetails}>
+            <Text style={styles.addressLabel}>Recoger en</Text>
+            <Text style={styles.addressText} numberOfLines={1}>
+              {order.business?.location?.address || 'Dirección del negocio'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.addressContainer}>
+          <View style={[styles.addressDot, styles.addressDotDelivery]} />
+          <View style={styles.addressDetails}>
+            <Text style={styles.addressLabel}>Entregar en</Text>
+            <Text style={styles.addressText} numberOfLines={1}>
+              {order.deliveryAddress?.address || 'Dirección de entrega'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.orderFooter}>
+          <View style={styles.itemsInfo}>
+            <Package size={16} color={COLORS.gray[600]} />
+            <Text style={styles.itemsText}>
+              Ver detalles
+            </Text>
+          </View>
+          <Button
+            onPress={() => isActive ? handleUpdateStatus(order.id, order.status) : handleAcceptOrder(order.id)}
+            size="sm"
+            style={{ backgroundColor: actionButtonColor }}
+            testID={isActive ? `update-status-${order.id}` : `accept-order-${order.id}`}
+          >
+            {actionButtonText}
+          </Button>
+        </View>
+      </Card>
+    );
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <Text style={{ fontSize: 24, fontWeight: 'bold', color: COLORS.gray[900] }}>Hola, {user?.user_metadata?.name || 'Driver'}</Text>
+          <NotificationButton />
+        </View>
+
         <Card style={styles.statusCard}>
           <View style={styles.statusRow}>
             <View>
@@ -245,7 +284,19 @@ export default function DriverDashboardScreen() {
         style={styles.ordersContainer}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.ordersContent}
+        refreshControl={
+          <RefreshControl refreshing={isLoading} onRefresh={fetchDriverData} />
+        }
       >
+        {activeOrders.length > 0 && (
+          <View style={{ marginBottom: SPACING.lg }}>
+            <Text style={styles.sectionTitle}>
+              Pedidos Activos ({activeOrders.length})
+            </Text>
+            {activeOrders.map(order => renderOrderCard(order, true))}
+          </View>
+        )}
+
         <Text style={styles.sectionTitle}>
           Pedidos Disponibles ({availableOrders.length})
         </Text>
@@ -267,68 +318,7 @@ export default function DriverDashboardScreen() {
             </Text>
           </Card>
         ) : (
-          availableOrders.map((order) => {
-            const distance = calculateDistance();
-            const estimatedPay = (order.delivery_fee || 2.50).toFixed(2);
-
-            return (
-              <Card key={order.id} style={styles.orderCard}>
-                <View style={styles.orderHeader}>
-                  <View>
-                    <Text style={styles.businessName}>
-                      {order.business?.name || 'Negocio'}
-                    </Text>
-                    <View style={styles.orderInfo}>
-                      <MapPin size={14} color={COLORS.gray[600]} />
-                      <Text style={styles.orderInfoText}>{distance} km</Text>
-                      <Clock size={14} color={COLORS.gray[600]} />
-                      <Text style={styles.orderInfoText}>~15 min</Text>
-                    </View>
-                  </View>
-                  <View style={styles.paymentBadge}>
-                    <Text style={styles.paymentText}>${estimatedPay}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.addressContainer}>
-                  <View style={styles.addressDot} />
-                  <View style={styles.addressDetails}>
-                    <Text style={styles.addressLabel}>Recoger en</Text>
-                    <Text style={styles.addressText} numberOfLines={1}>
-                      {order.business?.location?.address || 'Dirección del negocio'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.addressContainer}>
-                  <View style={[styles.addressDot, styles.addressDotDelivery]} />
-                  <View style={styles.addressDetails}>
-                    <Text style={styles.addressLabel}>Entregar en</Text>
-                    <Text style={styles.addressText} numberOfLines={1}>
-                      {order.deliveryAddress?.address || 'Dirección de entrega'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.orderFooter}>
-                  <View style={styles.itemsInfo}>
-                    <Package size={16} color={COLORS.gray[600]} />
-                    <Text style={styles.itemsText}>
-                      {/* {order.items.length} {order.items.length === 1 ? 'producto' : 'productos'} */}
-                      Ver detalles
-                    </Text>
-                  </View>
-                  <Button
-                    onPress={() => handleAcceptOrder(order.id)}
-                    size="sm"
-                    testID={`accept-order-${order.id}`}
-                  >
-                    Aceptar
-                  </Button>
-                </View>
-              </Card>
-            );
-          })
+          availableOrders.map(order => renderOrderCard(order, false))
         )}
       </ScrollView>
     </View>
@@ -412,7 +402,7 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     color: COLORS.warning,
     fontWeight: TYPOGRAPHY.fontWeight.medium,
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   emptyCard: {
     padding: SPACING.xl,
@@ -428,7 +418,7 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     color: COLORS.gray[500],
     marginTop: SPACING.xs,
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   orderCard: {
     padding: SPACING.md,
@@ -534,7 +524,7 @@ const styles = StyleSheet.create({
   },
   quickActionLabel: {
     fontSize: TYPOGRAPHY.fontSize.xs,
-    fontWeight: TYPOGRAPHY.fontWeight.semiBold as any,
+    fontWeight: TYPOGRAPHY.fontWeight.semiBold,
     color: COLORS.gray[900],
   },
 });
