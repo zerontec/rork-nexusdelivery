@@ -29,25 +29,51 @@ export default function DriverDashboardScreen() {
       setIsLoading(true);
       const today = new Date().toISOString().split('T')[0];
 
-      // Fetch driver stats
-      const { count: completedCount } = await supabase
+      // Get driver's profile id and stats
+      const { data: driverProfile, error: driverError } = await supabase
+        .from('drivers')
+        .select('id, rating, reviews')
+        .eq('id', user.id)
+        .single();
+
+      if (driverError || !driverProfile) {
+        console.error('Driver profile not found:', driverError);
+        return;
+      }
+
+      const driverId = driverProfile.id;
+
+      // Fetch total completed orders (all time)
+      const { count: totalCompleted } = await supabase
         .from('orders')
         .select('*', { count: 'exact', head: true })
-        .eq('driver_id', user.id)
+        .eq('driver_id', driverId)
+        .eq('status', 'delivered');
+
+      // Fetch today's earnings
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const { data: todayOrders } = await supabase
+        .from('orders')
+        .select('delivery_fee')
+        .eq('driver_id', driverId)
         .eq('status', 'delivered')
-        .gte('created_at', today);
+        .gte('created_at', startOfDay.toISOString());
+
+      const todayEarnings = todayOrders?.reduce((sum, order) => sum + (order.delivery_fee || 0), 0) || 0;
 
       setStats({
-        earnings: (completedCount || 0) * 2.50, // Mock earnings calculation
-        completed: completedCount || 0,
-        rating: 4.8, // Mock rating
+        earnings: todayEarnings,
+        completed: totalCompleted || 0,
+        rating: driverProfile.rating || 5.0,
       });
 
       // Fetch active orders (assigned to driver and in progress)
       const { data: active, error: activeError } = await supabase
         .from('orders')
         .select('*, business:businesses(*)')
-        .eq('driver_id', user.id)
+        .eq('driver_id', driverId)
         .in('status', ['picking_up', 'in_transit']);
 
       if (activeError) throw activeError;
@@ -81,10 +107,22 @@ export default function DriverDashboardScreen() {
   const handleAcceptOrder = async (orderId: string) => {
     if (!user) return;
     try {
+      // Get driver's profile id
+      const { data: driverProfile, error: driverError } = await supabase
+        .from('drivers')
+        .select('id')
+        .eq('id', user.id)
+        .single();
+
+      if (driverError || !driverProfile) {
+        console.error('Driver profile not found:', driverError);
+        return;
+      }
+
       const { error } = await supabase
         .from('orders')
         .update({
-          driver_id: user.id,
+          driver_id: driverProfile.id,
           status: 'picking_up'
         })
         .eq('id', orderId);

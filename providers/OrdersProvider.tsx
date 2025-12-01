@@ -69,8 +69,22 @@ export const [OrdersProvider, useOrders] = createContextHook((): OrdersContextVa
         query = query.eq('business_id', businessProfile.id);
       } else if (currentRole === 'driver') {
         console.log('[OrdersProvider] Filtering for driver:', user.id);
-        // Show orders assigned to this driver OR orders ready for pickup (available)
-        query = query.or(`driver_id.eq.${user.id},and(status.eq.ready,driver_id.is.null)`);
+
+        // Get driver profile id
+        const { data: driverProfile } = await supabase
+          .from('drivers')
+          .select('id')
+          .eq('id', user.id)
+          .single();
+
+        if (driverProfile) {
+          // Show orders assigned to this driver OR orders ready for pickup (available)
+          query = query.or(`driver_id.eq.${driverProfile.id},and(status.eq.ready,driver_id.is.null)`);
+        } else {
+          console.warn('[OrdersProvider] Driver profile not found for user:', user.id);
+          // Fallback to empty result or handle error
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000'); // Force empty
+        }
       }
 
 

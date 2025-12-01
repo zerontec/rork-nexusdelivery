@@ -25,11 +25,26 @@ export default function RatingsScreen() {
     const fetchRatings = async () => {
       setIsLoading(true);
       try {
+        // Get driver's profile id first
+        const { data: driverProfile } = await supabase
+          .from('drivers')
+          .select('id')
+          .eq('id', user.id)
+          .single();
+
+        if (!driverProfile) {
+          console.log('[Ratings] Driver profile not found');
+          setIsLoading(false);
+          return;
+        }
+
+        const driverId = driverProfile.id;
+
         // Fetch driver rating info
         const { data: driver } = await supabase
           .from('drivers')
           .select('rating, reviews')
-          .eq('id', user.id)
+          .eq('id', driverId)
           .single();
 
         if (driver) {
@@ -43,7 +58,7 @@ export default function RatingsScreen() {
         const { data: reviewsData, error } = await supabase
           .from('reviews')
           .select('*')
-          .eq('driver_id', user.id)
+          .eq('driver_id', driverId)
           .order('created_at', { ascending: false });
 
         if (error) {

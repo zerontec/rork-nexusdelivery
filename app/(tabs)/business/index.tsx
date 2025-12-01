@@ -26,14 +26,15 @@ export default function BusinessDashboardScreen() {
 
     try {
       setIsLoading(true);
-      const today = new Date().toISOString().split('T')[0];
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
 
       // Fetch today's orders
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select('*')
         .eq('business_id', businessProfile.id)
-        .gte('created_at', today);
+        .gte('created_at', startOfDay.toISOString());
 
       if (ordersError) {
         console.error('Error fetching orders:', ordersError);
@@ -41,7 +42,7 @@ export default function BusinessDashboardScreen() {
       }
 
       console.log('Business Profile ID:', businessProfile.id);
-      console.log('Today:', today);
+      console.log('Start of Day:', startOfDay.toISOString());
       console.log('Orders found:', orders?.length);
 
 

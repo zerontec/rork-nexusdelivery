@@ -39,11 +39,26 @@ export default function EarningsScreen() {
     const fetchEarnings = async () => {
       setIsLoading(true);
       try {
+        // Get driver's profile id first
+        const { data: driverProfile } = await supabase
+          .from('drivers')
+          .select('id')
+          .eq('id', user.id)
+          .single();
+
+        if (!driverProfile) {
+          console.log('[Earnings] Driver profile not found');
+          setIsLoading(false);
+          return;
+        }
+
+        const driverId = driverProfile.id;
+
         // Fetch all delivered orders for this driver
         const { data: orders } = await supabase
           .from('orders')
           .select('created_at, delivery_fee, total')
-          .eq('driver_id', user.id)
+          .eq('driver_id', driverId)
           .eq('status', 'delivered')
           .order('created_at', { ascending: false });
 
@@ -60,11 +75,18 @@ export default function EarningsScreen() {
 
           orders.forEach(order => {
             const orderDate = new Date(order.created_at);
-            const dateStr = order.created_at.split('T')[0];
             const amount = order.delivery_fee || 0;
 
+            // Use local date string for grouping
+            const localDateStr = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getDate()).padStart(2, '0')}`;
+
+            // Check if it's today (local time)
+            const isToday = orderDate.getDate() === now.getDate() &&
+              orderDate.getMonth() === now.getMonth() &&
+              orderDate.getFullYear() === now.getFullYear();
+
             // Today
-            if (dateStr === todayStr) {
+            if (isToday) {
               todaySum += amount;
               todayCount++;
             }
@@ -81,12 +103,12 @@ export default function EarningsScreen() {
               monthCount++;
             }
 
-            // Group for recent payments
-            if (!paymentsMap[dateStr]) {
-              paymentsMap[dateStr] = { amount: 0, orders: 0 };
+            // Group for recent payments using local date
+            if (!paymentsMap[localDateStr]) {
+              paymentsMap[localDateStr] = { amount: 0, orders: 0 };
             }
-            paymentsMap[dateStr].amount += amount;
-            paymentsMap[dateStr].orders += 1;
+            paymentsMap[localDateStr].amount += amount;
+            paymentsMap[localDateStr].orders += 1;
           });
 
           setEarnings({

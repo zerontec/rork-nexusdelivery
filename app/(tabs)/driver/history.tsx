@@ -36,13 +36,29 @@ export default function DriverHistoryScreen() {
     const fetchHistory = async () => {
       setIsLoading(true);
       try {
-        console.log('[DriverHistory] Fetching orders for driver:', user.id);
+        console.log('[DriverHistory] Fetching orders for driver user:', user.id);
+
+        // Get driver's profile id first
+        const { data: driverProfile } = await supabase
+          .from('drivers')
+          .select('id')
+          .eq('id', user.id)
+          .single();
+
+        if (!driverProfile) {
+          console.log('[DriverHistory] Driver profile not found');
+          setAllOrders([]);
+          return;
+        }
+
+        const driverId = driverProfile.id;
+        console.log('[DriverHistory] Found driver profile:', driverId);
 
         // Fetch orders without business relationship
         const { data: orders, error } = await supabase
           .from('orders')
           .select('*')
-          .eq('driver_id', user.id)
+          .eq('driver_id', driverId)
           .in('status', ['delivered', 'cancelled'])
           .order('created_at', { ascending: false });
 
