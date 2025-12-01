@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "NexusDelivery",
-    "slug": "nexusdelivery",
+    "name": "Velozia",
+    "slug": "velozia",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -15,14 +15,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.rork.nexusdelivery"
+      "bundleIdentifier": "app.rork.velozia"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "app.rork.nexusdelivery"
+      "package": "app.rork.velozia"
     },
     "web": {
       "favicon": "./assets/images/favicon.png"

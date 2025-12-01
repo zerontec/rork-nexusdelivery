@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
@@ -18,21 +19,23 @@ export default function WelcomeScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      
-      <ScrollView 
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xxl }]} 
+
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xxl }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.heroSection}>
           <View style={styles.logoContainer}>
-            <View style={styles.logoBg}>
-              <Zap size={48} color={COLORS.primary} />
-            </View>
+            <Image
+              source={require('@/assets/images/velozia-mascot.png')}
+              style={styles.mascotImage}
+              resizeMode="contain"
+            />
           </View>
-          
-          <Text style={styles.title}>NexusDelivery</Text>
+
+          <Text style={styles.title}>Velozia</Text>
           <Text style={styles.subtitle}>
-            Conectamos negocios, clientes y repartidores en un solo lugar
+            Tu compañero de entregas rápidas y seguras
           </Text>
 
           <View style={styles.featuresContainer}>
@@ -59,7 +62,7 @@ export default function WelcomeScreen() {
 
         <View style={styles.rolesSection}>
           <Text style={styles.rolesSectionTitle}>¿Cómo quieres empezar?</Text>
-          
+
           <TouchableOpacity
             style={[styles.roleCard, styles.customerCard]}
             onPress={() => router.push('/(tabs)/home' as any)}
@@ -118,7 +121,7 @@ export default function WelcomeScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.loginLink}
           onPress={() => router.push('/login' as any)}
         >
@@ -147,14 +150,9 @@ const styles = StyleSheet.create({
   logoContainer: {
     marginBottom: SPACING.xl,
   },
-  logoBg: {
-    width: 100,
-    height: 100,
-    borderRadius: BORDER_RADIUS.full,
-    backgroundColor: COLORS.primary + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...SHADOWS.md,
+  mascotImage: {
+    width: 200,
+    height: 200,
   },
   title: {
     fontSize: 36,

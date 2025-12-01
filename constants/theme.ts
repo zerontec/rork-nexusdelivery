@@ -8,18 +8,18 @@ export const SPACING = {
 } as const;
 
 export const COLORS = {
-  primary: '#FF6B35',
+  primary: '#FFAA00', // Velozia orange - hsl(39 100% 50%)
   secondary: '#004E89',
-  accent: '#F7931E',
-  
+  accent: '#FF8C00', // Darker orange for accents
+
   success: '#4CAF50',
   warning: '#FFC107',
   error: '#F44336',
   info: '#2196F3',
-  
+
   white: '#FFFFFF',
   black: '#000000',
-  
+
   gray: {
     50: '#F9FAFB',
     100: '#F3F4F6',

@@ -22,6 +22,7 @@ type ButtonProps = {
   fullWidth?: boolean;
   style?: ViewStyle;
   testID?: string;
+  textStyle?: TextStyle;
 };
 
 export function Button({
@@ -34,21 +35,23 @@ export function Button({
   fullWidth = false,
   style,
   testID,
+  textStyle: customTextStyle,
 }: ButtonProps) {
   const buttonStyle: ViewStyle[] = [
     styles.base,
     styles[`size_${size}`],
     styles[`variant_${variant}`],
-    disabled && styles.disabled,
-    fullWidth && styles.fullWidth,
-    style,
+    (disabled ? styles.disabled : {}) as ViewStyle,
+    (fullWidth ? styles.fullWidth : {}) as ViewStyle,
+    style as ViewStyle,
   ];
 
   const textStyle: TextStyle[] = [
     styles.text,
     styles[`text_${size}`],
     styles[`text_${variant}`],
-    disabled && styles.textDisabled,
+    (disabled ? styles.textDisabled : {}) as TextStyle,
+    customTextStyle as TextStyle,
   ];
 
   return (

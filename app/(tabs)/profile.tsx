@@ -288,7 +288,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <Text style={styles.version}>NexusDelivery v1.0.0</Text>
+        <Text style={styles.version}>Velozia v1.0.0</Text>
       </ScrollView>
     </View>
   );

@@ -8,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
   Linking,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Phone, MapPin, Star } from 'lucide-react-native';
@@ -145,6 +146,29 @@ export default function OrderDetailScreen() {
     await updateOrderStatus(order.id, newStatus);
   };
 
+  const handleCancelOrder = () => {
+    Alert.alert(
+      'Cancelar Pedido',
+      '¿Estás seguro de que quieres cancelar este pedido?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Sí, Cancelar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await updateOrderStatus(order.id, 'cancelled');
+              router.back();
+            } catch (error) {
+              console.error('Error cancelling order:', error);
+              Alert.alert('Error', 'No se pudo cancelar el pedido');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       <Stack.Screen
@@ -164,9 +188,19 @@ export default function OrderDetailScreen() {
             <Text style={styles.sectionTitle}>Gestionar Pedido</Text>
             <View style={styles.statusButtons}>
               {order.status === 'pending' && (
-                <Button onPress={() => handleUpdateStatus('confirmed')}>
-                  Confirmar Pedido
-                </Button>
+                <>
+                  <Button onPress={() => handleUpdateStatus('confirmed')}>
+                    Confirmar Pedido
+                  </Button>
+                  <Button
+                    onPress={handleCancelOrder}
+                    variant="outline"
+                    style={{ marginTop: SPACING.sm, borderColor: COLORS.error }}
+                    textStyle={{ color: COLORS.error }}
+                  >
+                    Rechazar Pedido
+                  </Button>
+                </>
               )}
               {order.status === 'confirmed' && (
                 <Button onPress={() => handleUpdateStatus('preparing')}>
@@ -400,19 +434,19 @@ export default function OrderDetailScreen() {
             <Text style={styles.infoValue}>{order.paymentMethod}</Text>
           </View>
         </View>
-      </ScrollView>
 
-      {canCancelOrder && (
-        <View style={styles.footer}>
-          <Button
-            onPress={() => {
-              console.log('[OrderDetail] Cancel order:', order.id);
-            }}
-            variant="outline"
-            size="md"
-          >Cancelar Pedido</Button>
-        </View>
-      )}
+        {canCancelOrder && !isBusiness && (
+          <View style={styles.footer}>
+            <Button
+              onPress={handleCancelOrder}
+              variant="outline"
+              size="md"
+              style={{ borderColor: COLORS.error }}
+              textStyle={{ color: COLORS.error }}
+            >Cancelar Pedido</Button>
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
