@@ -21,6 +21,7 @@ export default function DriverDashboardScreen() {
   });
   const [availableOrders, setAvailableOrders] = useState<any[]>([]);
   const [activeOrders, setActiveOrders] = useState<any[]>([]);
+  const [isApproved, setIsApproved] = useState(true);
 
   const fetchDriverData = useCallback(async () => {
     if (!user) return;
@@ -29,10 +30,9 @@ export default function DriverDashboardScreen() {
       setIsLoading(true);
       const today = new Date().toISOString().split('T')[0];
 
-      // Get driver's profile id and stats
       const { data: driverProfile, error: driverError } = await supabase
         .from('drivers')
-        .select('id, rating, reviews')
+        .select('id, rating, reviews, is_approved')
         .eq('id', user.id)
         .single();
 
@@ -42,15 +42,14 @@ export default function DriverDashboardScreen() {
       }
 
       const driverId = driverProfile.id;
+      setIsApproved(driverProfile.is_approved || false);
 
-      // Fetch total completed orders (all time)
       const { count: totalCompleted } = await supabase
         .from('orders')
         .select('*', { count: 'exact', head: true })
         .eq('driver_id', driverId)
         .eq('status', 'delivered');
 
-      // Fetch today's earnings
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
 
@@ -69,7 +68,6 @@ export default function DriverDashboardScreen() {
         rating: driverProfile.rating || 5.0,
       });
 
-      // Fetch active orders (assigned to driver and in progress)
       const { data: active, error: activeError } = await supabase
         .from('orders')
         .select('*, business:businesses(*)')
@@ -79,7 +77,6 @@ export default function DriverDashboardScreen() {
       if (activeError) throw activeError;
       setActiveOrders(active || []);
 
-      // Fetch available orders (ready for pickup and not assigned)
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select('*, business:businesses(*)')
@@ -107,7 +104,6 @@ export default function DriverDashboardScreen() {
   const handleAcceptOrder = async (orderId: string) => {
     if (!user) return;
     try {
-      // Get driver's profile id
       const { data: driverProfile, error: driverError } = await supabase
         .from('drivers')
         .select('id')
@@ -122,8 +118,7 @@ export default function DriverDashboardScreen() {
       const { error } = await supabase
         .from('orders')
         .update({
-          driver_id: driverProfile.id,
-          status: 'picking_up'
+          driver_id: driverProfile.id
         })
         .eq('id', orderId);
 
@@ -245,9 +240,9 @@ export default function DriverDashboardScreen() {
         <Card style={styles.statusCard}>
           <View style={styles.statusRow}>
             <View>
-              <Text style={styles.statusLabel}>Estado</Text>
+              <Text style={styles.statusLabel}>Disponibilidad</Text>
               <Text style={[styles.statusText, isAvailable && styles.statusActive]}>
-                {isAvailable ? 'Disponible' : 'No disponible'}
+                {isAvailable ? 'Activo' : 'Inactivo'}
               </Text>
             </View>
             <Switch
@@ -258,6 +253,29 @@ export default function DriverDashboardScreen() {
             />
           </View>
         </Card>
+
+        {/* Pending Approval Banner */}
+        {!isApproved && (
+          <Card style={styles.pendingBanner}>
+            <View style={styles.pendingContent}>
+              <View style={styles.pendingIcon}>
+                <Clock size={24} color={COLORS.warning} />
+              </View>
+              <View style={styles.pendingText}>
+                <Text style={styles.pendingTitle}>⚠️ Cuenta Pendiente de Aprobación</Text>
+                <Text style={styles.pendingDescription}>
+                  Tu solicitud está siendo revisada. Asegúrate de haber subido toda tu documentación.
+                </Text>
+                <TouchableOpacity
+                  style={styles.uploadLinkButton}
+                  onPress={() => router.push('/driver/documents')}
+                >
+                  <Text style={styles.uploadLinkText}>Subir/Ver Documentos →</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Card>
+        )}
 
         <View style={styles.statsRow}>
           <TouchableOpacity

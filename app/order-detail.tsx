@@ -41,7 +41,7 @@ export default function OrderDetailScreen() {
 
   const isDriver = currentRole === 'driver';
   const isBusiness = currentRole === 'business';
-  const isClient = currentRole === 'client' || currentRole === 'customer';
+  const isClient = currentRole === 'client';
 
   const isAssignedToMe = isDriver && order?.driverId === user?.id;
   const canAccept = isDriver && order?.status === 'ready' && !order?.driverId;
@@ -212,9 +212,14 @@ export default function OrderDetailScreen() {
                   Listo para Recoger
                 </Button>
               )}
-              {order.status === 'ready' && (
+              {order.status === 'ready' && !order.driverId && (
                 <Text style={styles.driverInstruction}>
                   Esperando a que un repartidor acepte el pedido.
+                </Text>
+              )}
+              {order.status === 'ready' && order.driverId && (
+                <Text style={styles.driverInstruction}>
+                  Repartidor asignado. Esperando confirmación de recogida.
                 </Text>
               )}
               {['assigned', 'picking_up', 'in_transit'].includes(order.status) && (
@@ -244,7 +249,7 @@ export default function OrderDetailScreen() {
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>Gestionar Entrega</Text>
             <View style={styles.statusButtons}>
-              {order.status === 'assigned' && (
+              {(order.status === 'assigned' || order.status === 'ready') && (
                 <Button onPress={() => handleUpdateStatus('picking_up')}>
                   Confirmar Recogida
                 </Button>

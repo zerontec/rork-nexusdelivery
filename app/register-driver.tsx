@@ -90,7 +90,7 @@ export default function RegisterDriverScreen() {
         }
 
         console.log('[RegisterDriver] Registration successful - pending approval');
-        router.replace('/driver-pending' as any);
+        router.replace('/driver/documents' as any);
       }
     } catch (error: any) {
       console.error('[RegisterDriver] Error:', error.message);

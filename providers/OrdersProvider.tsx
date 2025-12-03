@@ -171,7 +171,7 @@ export const [OrdersProvider, useOrders] = createContextHook((): OrdersContextVa
       setOrders((prev) =>
         prev.map((order) =>
           order.id === orderId
-            ? { ...order, driverId, status: 'assigned' as OrderStatus }
+            ? { ...order, driverId }
             : order
         )
       );
@@ -179,8 +179,7 @@ export const [OrdersProvider, useOrders] = createContextHook((): OrdersContextVa
       const { error } = await supabase
         .from('orders')
         .update({
-          driver_id: driverId,
-          status: 'assigned'
+          driver_id: driverId
         })
         .eq('id', orderId);
 
